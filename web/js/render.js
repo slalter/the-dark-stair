@@ -36,7 +36,7 @@ const FX = { particles: [], floaters: [], shake: 0, hurtT: 0, hover: null, fadeT
 const CAM = { zoom: 1.5, x: 0, y: 0, snap: true };
 try { CAM.zoom = +(localStorage.getItem('arcaneZoom') || 1.5) || 1.5; } catch (e) { /* ignore */ }
 function cycleZoom() {
-  const levels = [1, 1.5, 2];
+  const levels = [1, 1.5, 2, 2.5, 3]; // deeper zoom range (widget 0683a4d4)
   CAM.zoom = levels[(levels.indexOf(CAM.zoom) + 1) % levels.length];
   CAM.snap = true;
   try { localStorage.setItem('arcaneZoom', String(CAM.zoom)); } catch (e) { /* ignore */ }
@@ -44,7 +44,7 @@ function cycleZoom() {
 }
 function camView() { return { vw: VIEW_W / CAM.zoom, vh: VIEW_H / CAM.zoom }; }
 sizeCanvas();
-if (MOBILE_UI) window.addEventListener('resize', sizeCanvas);
+if (MOBILE_UI) { window.addEventListener('resize', sizeCanvas); window.addEventListener('orientationchange', () => setTimeout(sizeCanvas, 120)); }
 
 /* deterministic per-tile hash for texture variation */
 function tileHash(x, y) {

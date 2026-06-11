@@ -528,3 +528,34 @@ body.mobile-ui #guru-widget-btn {
   width: 42px !important; height: 42px !important;
   opacity: 0.85;
 }
+
+/* mobile round 2 (live user whispers): zoom slider, detail cards, landscape */
+#mhud #mh-zoom {
+  width: 86px; accent-color: #7ee0a3; pointer-events: auto;
+  height: 18px; margin-left: auto; opacity: 0.8;
+}
+#mtip {
+  position: absolute; left: 50%; bottom: 32%; transform: translateX(-50%);
+  min-width: 220px; max-width: 84vw; z-index: 60; pointer-events: auto;
+  background: rgba(12, 12, 22, 0.96); border: 1px solid var(--panel-border);
+  border-radius: 12px; padding: 12px 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.6);
+}
+#mtip.hidden { display: none; }
+#mtip .mtip-name { font: bold 15px Consolas, monospace; color: var(--gold); margin-bottom: 6px; }
+#mtip .mtip-desc { font: 13px Consolas, monospace; color: var(--text); line-height: 1.45; }
+#mtip .mtip-row { display: flex; gap: 10px; margin-top: 10px; }
+#mtip .mtip-row button {
+  flex: 1; padding: 10px; border-radius: 8px; font: bold 13px Consolas, monospace;
+  background: #1c1c36; color: var(--text); border: 1px solid var(--panel-border);
+  touch-action: manipulation;
+}
+#mtip .mtip-row #mtip-drop { color: #e35d6a; }
+
+/* landscape phones: shorter screen, tuck the clusters lower and log tighter */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.mobile-ui #mhud .cluster-right { bottom: 14px; flex-direction: row; right: 12px; }
+  body.mobile-ui #mhud .cluster-left { bottom: 14px; flex-direction: row; left: 12px; }
+  body.mobile-ui #log { max-height: 3.2em; right: 0; left: 230px; bottom: 70px; }
+  body.mobile-ui #log.expanded { left: 0; bottom: 0; }
+}

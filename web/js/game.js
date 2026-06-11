@@ -2525,14 +2525,14 @@ function buildSpellPanel() {
   };
   if (G.classId === 'mage') {
     SPELLS.forEach((sp, i) =>
-      addRow(`[${sp.key}]`, sp.name, `${sp.cost}◆`, sp.desc, () => castSpell(i), 'spell-' + i));
+      addRow(`[${sp.key}]`, `${ABILITY_GLYPHS.spells[i]} ${sp.name}`, `${sp.cost}◆`, sp.desc, () => castSpell(i), 'spell-' + i));
   } else if (G.classId === 'warrior') {
-    addRow('[V]', 'Cleave', 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
-    addRow('[B]', 'Shield Charge', 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
-    addRow('[G]', 'Bulwark', 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
+    addRow('[V]', `${ABILITY_GLYPHS.cleave} Cleave`, 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
+    addRow('[B]', `${ABILITY_GLYPHS.charge} Shield Charge`, 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
+    addRow('[G]', `${ABILITY_GLYPHS.bulwark} Bulwark`, 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
   } else {
-    addRow('[V]', 'Shadow Dash', 'ready', 'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival', () => castShadowDash(), 'dash-row');
-    addRow('[B]', 'Vault', 'ready', 'leap clean over an adjacent foe and land behind it — the cornered rogue\'s way out', () => castVault(), 'vault-row');
+    addRow('[V]', `${ABILITY_GLYPHS.dash} Shadow Dash`, 'ready', 'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival', () => castShadowDash(), 'dash-row');
+    addRow('[B]', `${ABILITY_GLYPHS.vault} Vault`, 'ready', 'leap clean over an adjacent foe and land behind it — your strike on arrival is a backstab', () => castVault(), 'vault-row');
     addRow('—', 'Backstab', '×3', 'passive: 3× damage against foes that are unaware, stirring or frozen', null);
     addRow('—', 'Shadowstep', '·', 'passive: monsters notice you 2 tiles later; you sense hidden traps', null);
   }
@@ -2620,6 +2620,7 @@ function updateUI() {
       (entry.count > 1 ? `<span class="count">×${entry.count}</span>` : '');
     btn.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); useItem(i); });
     btn.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.currentTarget.blur(); dropItem(i); });
+    if (typeof window.mItemCard === 'function') window.mItemCard(btn, entry, i); // hold to read/use/drop (mobile)
     if (IS_TOUCH) {
       // iOS never fires contextmenu — give every row an explicit drop chip
       const dc = document.createElement('span');
@@ -2962,6 +2963,12 @@ window.addEventListener('resize', fitView);
 fitView();
 
 /* ---------- input ---------- */
+// one icon language everywhere: HUD buttons, sidebar rows, help (widget 7406d6fd)
+const ABILITY_GLYPHS = {
+  spells: ['✦', '❅', '✚', '✷'], // bolt, nova, mend, blink
+  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴',
+};
+
 const MOVE_KEYS = {
   arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0],
   w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
@@ -3417,7 +3424,9 @@ let joySuppressClick = false;
         '<div class="hud-bar hud-mana" id="mh-mana-wrap"><div id="mh-mana"></div></div>' +
       '</div>' +
       '<div class="hud-chips" id="mh-chips"></div>' +
+      '<input type="range" id="mh-zoom" min="1" max="3" step="0.5" title="zoom">' +
     '</div>' +
+    '<div id="mtip" class="hidden"></div>' +
     '<div class="cluster-left">' +
       '<button class="mbtn small" id="mb-bag" title="pack &amp; map">\u2630</button>' +
       '<button class="mbtn small" id="mb-explore" title="auto-explore">\u25ce</button>' +
@@ -3451,38 +3460,94 @@ let joySuppressClick = false;
     joyHinted = true;
     try { localStorage.setItem('arcaneJoyHint', '1'); } catch (e) { /* ignore */ }
     spawnFloater(G.player.x, G.player.y, 'drag anywhere to walk', '#a8f0c0', 13);
-    addMsg('Drag anywhere on the dungeon to walk that way — hold to keep walking.', 'm-gold');
+    addMsg('Drag anywhere on the dungeon to walk — a quick flick steps ONCE, holding keeps walking.', 'm-gold');
   };
   setInterval(maybeHint, 800);
 
+  // zoom slider: 'we might want a greater degree of zoom and a little
+  // slider on the top' (widget 0683a4d4)
+  const zoomEl = hud.querySelector('#mh-zoom');
+  zoomEl.value = CAM.zoom;
+  zoomEl.addEventListener('input', () => {
+    CAM.zoom = +zoomEl.value; CAM.snap = true;
+    try { localStorage.setItem('arcaneZoom', String(CAM.zoom)); } catch (e) { /* ignore */ }
+  });
+
+  // long-press detail cards: 'a nice little arrow to show the details on
+  // the things' (widget cb93f90b) — hold any button or pack row to read it
+  const tip = hud.querySelector('#mtip');
+  let tipTimer = null, tipSuppress = false;
+  const hideTip = () => { tip.classList.add('hidden'); tip.innerHTML = ''; };
+  const showTip = html => { tip.innerHTML = html; tip.classList.remove('hidden'); };
+  document.addEventListener('pointerdown', ev => { if (!tip.contains(ev.target)) hideTip(); }, true);
+  const longPress = (el, render) => {
+    el.addEventListener('pointerdown', () => {
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => { tipSuppress = true; showTip(render()); }, 420);
+    });
+    for (const evName of ['pointerup', 'pointerleave', 'pointercancel']) {
+      el.addEventListener(evName, () => clearTimeout(tipTimer));
+    }
+    el.addEventListener('click', ev => {
+      if (tipSuppress) { tipSuppress = false; ev.stopImmediatePropagation(); ev.preventDefault(); }
+    }, true);
+  };
+
+  // pack rows get the same hold-to-read, plus USE / DROP that the ✕ chip
+  // never managed to teach (widget 2e7e2c0d: 'I don't know how I would drop')
+  window.mItemCard = (rowEl, entry, idx) => {
+    longPress(rowEl, () => {
+      const def = ITEMS[entry.id];
+      setTimeout(() => {
+        const u = tip.querySelector('#mtip-use'), d = tip.querySelector('#mtip-drop');
+        if (u) u.addEventListener('click', () => { hideTip(); useItem(idx); });
+        if (d) d.addEventListener('click', () => { hideTip(); dropItem(idx); });
+      }, 0);
+      return `<div class="mtip-name" style="color:${def.color}">${def.glyph} ${def.name}${def.bonus ? ' +' + def.bonus : ''}</div>` +
+        `<div class="mtip-desc">${def.effect || (def.kind === 'potion' ? 'drink to use' : def.kind === 'scroll' ? 'read to unleash' : 'equip to wear')}${entry.count > 1 ? ' · ×' + entry.count : ''}</div>` +
+        `<div class="mtip-row"><button id="mtip-use">use</button><button id="mtip-drop">drop</button></div>`;
+    });
+  };
+
   // ability cluster: little sprite-buttons with cooldown/cost/count badges
-  const mkBtn = (glyph, title, fn) => {
+  const mkBtn = (glyph, title, fn, desc) => {
     const b = document.createElement('button');
     b.className = 'mbtn';
     b.innerHTML = glyph + '<span class="badge" style="display:none"></span>';
     b.title = title;
     b.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); fn(); });
+    if (desc) longPress(b, () =>
+      `<div class="mtip-name">${glyph} ${title}</div><div class="mtip-desc">${desc}</div>`);
     return b;
   };
-  const SPELL_GLYPHS = ['\u2726', '\u2745', '\u271a', '\u2737']; // bolt, nova, mend, blink
+  const SPELL_GLYPHS = ABILITY_GLYPHS.spells;
   let builtFor = null;
   const buttons = [];
   const rebuild = () => {
     const box = hud.querySelector('#mh-abilities');
     box.innerHTML = ''; buttons.length = 0;
-    const add = (glyph, title, fn, badgeOf) => { const b = mkBtn(glyph, title, fn); buttons.push({ b, badgeOf }); box.appendChild(b); };
+    const add = (glyph, title, fn, badgeOf, desc) => { const b = mkBtn(glyph, title, fn, desc); buttons.push({ b, badgeOf }); box.appendChild(b); };
     if (G.classId === 'mage') {
       SPELLS.forEach((sp, i) => add(SPELL_GLYPHS[i], sp.name, () => castSpell(i),
-        p => (p.mana < sp.cost ? { txt: sp.cost + '\u25c6', cant: true } : { txt: sp.cost + '\u25c6' })));
+        p => (p.mana < sp.cost ? { txt: sp.cost + '\u25c6', cant: true } : { txt: sp.cost + '\u25c6' }), sp.desc));
     } else if (G.classId === 'warrior') {
-      add('\u2694', 'Cleave', () => castCleave(), p => p.cleaveCd > 0 ? { txt: p.cleaveCd, cant: true } : null);
-      add('\u00bb', 'Shield Charge', () => castCharge(), p => p.chargeCd > 0 ? { txt: p.chargeCd, cant: true } : null);
-      add('\u26e8', 'Bulwark', () => castBulwark(), p => p.guardCd > 0 ? { txt: p.guardCd, cant: true } : null);
+      add(ABILITY_GLYPHS.cleave, 'Cleave', () => castCleave(), p => p.cleaveCd > 0 ? { txt: p.cleaveCd, cant: true } : null,
+        'strike every adjacent foe in one sweep');
+      add(ABILITY_GLYPHS.charge, 'Shield Charge', () => castCharge(), p => p.chargeCd > 0 ? { txt: p.chargeCd, cant: true } : null,
+        'dash up to 3 tiles along a clear line into a foe and strike at +50%');
+      add(ABILITY_GLYPHS.bulwark, 'Bulwark', () => castBulwark(), p => p.guardCd > 0 ? { txt: p.guardCd, cant: true } : null,
+        'plant your shield: until your next turn every hit is turned aside to 1 damage');
     } else if (G.classId === 'rogue') {
-      add('\u00bb', 'Shadow Dash', () => castShadowDash(), p => p.dashCd > 0 ? { txt: p.dashCd, cant: true } : null);
-      add('\u2934', 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null);
+      add(ABILITY_GLYPHS.dash, 'Shadow Dash', () => castShadowDash(), p => p.dashCd > 0 ? { txt: p.dashCd, cant: true } : null,
+        'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival');
+      add(ABILITY_GLYPHS.vault, 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null,
+        'leap clean over an adjacent foe \u2014 your strike on arrival is a backstab');
     }
-    add('!', 'drink a potion', () => {
+    // the potion button wears the actual potion sprite \u2014 '!' read as an
+    // exclamation point, not a flask (widget 2e7e2c0d)
+    const potSrc = (typeof BUNDLED_ASSETS !== 'undefined' && BUNDLED_ASSETS['sprites/prop_potion.png']) || 'sprites/prop_potion.png';
+    add(`<img src="${potSrc}" alt="potion" style="width:26px;height:26px;image-rendering:pixelated;vertical-align:middle">`,
+      'drink a potion', () => {
       if (G.state !== 'PLAY') return;
       const i = G.player.inventory.findIndex(e => ITEMS[e.id] && ITEMS[e.id].kind === 'potion');
       if (i === -1) { addMsg('No potions left. The dark notices.', 'm-dim'); return; }
@@ -3490,7 +3555,7 @@ let joySuppressClick = false;
     }, p => {
       const n = p.inventory.reduce((s, e) => s + (ITEMS[e.id] && ITEMS[e.id].kind === 'potion' ? (e.count || 1) : 0), 0);
       return n ? { txt: 'x' + n } : { txt: 'x0', cant: true };
-    });
+    }, 'drinks the first potion in your pack \u2014 hold a pack row (\u2630) to read or drop items');
     builtFor = G.classId;
   };
   const refresh = () => {
