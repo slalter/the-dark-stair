@@ -3,7 +3,7 @@
 A turn-based browser roguelite in pure vanilla JavaScript — no framework, no
 build step, no dependencies. Descend six floors, read the floor, kill the Lich.
 
-**Play it:** https://www.gurucloudai.com/dark-stair-demo/
+**Play it:** https://thedarkstair.com
 
 ![genre] roguelite · permadeath · 3 classes · daily challenge · plays on phones
 
