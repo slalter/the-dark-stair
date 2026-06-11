@@ -22,7 +22,7 @@ for f in "$SRC"/*.mp3; do
      [0:a]asetrate=24000*0.62,aresample=24000,atempo=1.6129,lowpass=f=850,volume=1.0[grave];\
      [main][grave]amix=inputs=2:weights=1 0.32:normalize=0,\
      chorus=0.6:0.85:60|82:0.32|0.27:0.55|0.45:2.4|3.1,\
-     aecho=0.8:0.5:90|150:0.24|0.13,highpass=f=100,lowpass=f=5800" \
+     aecho=0.8:0.5:90|150:0.24|0.13,highpass=f=100,lowpass=f=5800,loudnorm=I=-16:TP=-1.5:LRA=11" \
     -b:a 96k "$DST/$base"
   echo "distorted v2: $base"
 done
