@@ -43,14 +43,14 @@ const LICH_LINES = {
   shrineCurse: '“THE SHRINE AND I HAVE AN ARRANGEMENT. THANK YOU FOR CONTRIBUTING.”',
   goldChest: '“GOLD. HOW SMALL YOUR DREAMS ARE, LITTLE THIEF.”',
   grukDead: '“GRUK SERVED ME IN LIFE. HE WILL AGAIN. THEY ALL DO.”',
-  floor4: '“HALFWAY. NO ONE WRITES SONGS ABOUT HALFWAY.”',
+  floor4: '“FOUR FLOORS DOWN. THE SONGS NEVER MENTION THE ONES WHO TURNED BACK HERE.”',
   flawless: '“…CAREFUL ONE. CARE IS ONLY FEAR, WALKING SLOWLY.”',
   lastPotion: '“THE LAST DROP. SAVOR IT. I WOULD.”',
   lowHp: '“I CAN HEAR YOUR HEARTBEAT FROM SIX FLOORS DOWN. IT STUMBLES.”',
   echo: '“YOU\'VE BEEN HERE BEFORE. YOU\'LL BE HERE AGAIN.”',
   darkStair: '“THE DARK STAIR? BOLD. IT EATS THE SLOW ONES, YOU KNOW.”',
   enrage: '“ENOUGH. NO MORE GAMES, LITTLE THING — COME AND DIE.”',
-  lichDeath: '“…AH. A PAUSE, THEN. I HAVE DIED BEFORE. FINISH YOUR LAP, LITTLE CHAMPION.”',
+  lichDeath: '“…AH. SO IT ENDS. AGAIN. I HAVE DIED BEFORE, LITTLE CHAMPION — DEATH NEVER KEEPS ME LONG.”',
 };
 /* Gruk speaks too — short, loud, and very pleased with himself */
 const GRUK_LINES = {
@@ -395,6 +395,7 @@ const warePrice = w => Math.ceil(w.price * (hasBoon('b_greed') ? 1.25 : 1));
 function newGame(classId) {
   cancelTravel();
   G.daily = dailyPending;
+  G.darkUsed = false; // fresh run, fresh shortcut
   dailyPending = false;
   const _dl = $('daily-line');
   if (_dl) _dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`;
@@ -563,6 +564,13 @@ function startLevel(depth) {
   G.gildedWarned = {};
   G.wareWarn = {};
   G.shopSeen = false;
+  G.darkSeen = false;
+  G.fetchSkip = {};
+  if (typeof CAM !== 'undefined') CAM.snap = true; // new floor: no cross-map pan
+  // one dark plunge per run: scrub later floors' dark stairs once it's spent
+  if (G.darkUsed) {
+    for (let i = 0; i < map.tiles.length; i++) if (map.tiles[i] === T.DARKSTAIRS) map.tiles[i] = T.FLOOR;
+  }
   G.echo = null;
   if (G.player) { G.player.secondWind = false; G.player.bulwarkT = 0; }
   if (typeof Ambient !== 'undefined' && !IS_SIM) Ambient.set(theme.name);
@@ -666,7 +674,12 @@ function tryMove(dx, dy) {
   if (tile === T.GOLDCHEST) { if (openGoldChest(nx, ny)) afterPlayerTurn(); return; }
   if (tile === T.SHRINE) { if (useShrine(nx, ny)) afterPlayerTurn(); return; }
   if (tile === T.GILDED) { if (lootGilded(nx, ny)) afterPlayerTurn(); return; }
-  if (!tileWalkable(tile)) { addMsg('A wall blocks you.', 'm-dim'); return; } // bumping a wall costs no turn
+  if (!tileWalkable(tile)) {
+    // debounced — key-mashing into a wall was flooding the log (widget feedback)
+    const now = Date.now();
+    if (!G._bumpAt || now - G._bumpAt > 1500) { addMsg('A wall blocks you.', 'm-dim'); G._bumpAt = now; }
+    return; // bumping a wall costs no turn
+  }
   p.x = nx; p.y = ny;
   if (!onEnterTile(nx, ny)) return;
   afterPlayerTurn();
@@ -823,6 +836,19 @@ function afterPlayerTurn() {
   if (p.maxMana > 0 && p.mana < p.maxMana) {
     p.mana = Math.min(p.maxMana, p.mana + (ringIs('ring_focus') ? 2 : 1));
   }
+  // first sight of the dark stair teaches the gamble (widget feedback:
+  // 'not really clear what it does')
+  if (!G.darkSeen && G.depth >= 2 && G.depth <= 4) {
+    for (const key of G.visible) {
+      const [vx, vy] = key.split(',');
+      if (G.map.get(+vx, +vy) === T.DARKSTAIRS) {
+        G.darkSeen = true;
+        addMsg('A RED stair, breathing cold — the dark stair plunges PAST the next floor. Richer spoils, worse company.', 'm-bad');
+        break;
+      }
+    }
+  }
+
   // first sight of the merchant's carpet teaches the buying flow
   if (!G.shopSeen && G.shop && G.shop.some(s => G.visible.has(s.x + ',' + s.y))) {
     G.shopSeen = true;
@@ -881,6 +907,17 @@ function addDecal(x, y) {
   if (G.decals.length > 150) G.decals.shift();
 }
 
+/* ground drops must never share a tile with a priced ware — a free item
+   under a price tag reads as a gold-skipping exploit (vet2 audit, bug 1) */
+function dropSpot(x, y) {
+  if (!G.shop || !G.shop.some(s => s.x === x && s.y === y)) return { x, y };
+  for (const [dx, dy] of DIRS8) {
+    const nx = x + dx, ny = y + dy;
+    if (G.map.walkable(nx, ny) && !G.shop.some(s => s.x === nx && s.y === ny)) return { x: nx, y: ny };
+  }
+  return { x, y };
+}
+
 function killMonster(m) {
   // the mage drinks the moment of death: kills siphon +1 mana (player feedback:
   // +2 made the mage 'too powerful' — Mana Font's +1 restores the old rate)
@@ -932,8 +969,9 @@ function killMonster(m) {
     addMsg(`${TheM(m)}'s hoard: +${g} gold.`, 'm-gold');
   }
   if (m.id === 'warlord') {
-    G.items.push({ x: m.x, y: m.y, id: 'w_axe' });
-    G.items.push({ x: m.x, y: m.y, gold: 60 });
+    const ds = dropSpot(m.x, m.y);
+    G.items.push({ x: ds.x, y: ds.y, id: 'w_axe' });
+    G.items.push({ x: ds.x, y: ds.y, gold: 60 });
     addMsg('Gruk\'s battleaxe clatters to the stone beside a heavy purse!', 'm-gold');
   }
   if (m.splits) {
@@ -1074,7 +1112,7 @@ function shareRunText(win) {
   return [
     head,
     `${G.classDef ? G.classDef.name : '?'} \u00b7 ${G.diff.name}${G.daily ? ' \u00b7 DAILY' : ''} \u00b7 floor ${G.depth}/${FINAL_DEPTH} \u00b7 ${G.kills} slain \u00b7 score ${score() + (win ? G.bonusScore : 0)}`,
-    `Face the dark: https://www.gurucloudai.com/dark-stair-demo/`,
+    `Face the dark: https://thedarkstair.com`,
   ].join('\n');
 }
 function wireShare(btnId, win) {
@@ -1128,6 +1166,7 @@ function descend() {
     return;
   }
   const darkPlunge = here === T.DARKSTAIRS;
+  if (darkPlunge) G.darkUsed = true; // the dark grants ONE shortcut a run — skip-skip gutted the game
   if (darkPlunge) G.darkNext = true;
   Sfx.stairs();
   if (G.floorDmg === 0 && G.turn > 0) {
@@ -1210,15 +1249,18 @@ function lootGilded(x, y) {
   spawnBurst(x, y, '#ffd75e', 18, 90);
   spawnBanner('THE DEAD MAN\'S ENVY', '#ffd75e');
   Sfx.whisper();
+  // 'The Dead Man's Envy is way too easy' (widget, 2026-06-11): three
+  // avengers now, spawned close, and the deep ones come back wrong
   const avengerId = G.depth <= 3 ? 'skeleton' : 'wraith';
   let raised = 0;
-  for (let k = 0; k < 40 && raised < 2; k++) {
-    const ax = x + RNG.int(-4, 4), ay = y + RNG.int(-4, 4);
+  for (let k = 0; k < 60 && raised < 3; k++) {
+    const ax = x + RNG.int(-3, 3), ay = y + RNG.int(-3, 3);
     if (!G.map.inBounds(ax, ay)) continue;
     if (cheb(ax, ay, x, y) < 2 || !G.map.walkable(ax, ay)) continue;
     if (monsterAt(ax, ay) || (ax === G.player.x && ay === G.player.y)) continue;
     const av = spawnMonster(avengerId, ax, ay);
     av.awake = true;
+    if (G.depth >= 4 && RNG.chance(0.5)) { av.elite = 'frenzied'; av.atk += 1; }
     spawnBurst(ax, ay, '#8fd3e8', 10, 70);
     raised++;
   }
@@ -1427,7 +1469,7 @@ function castSpell(i) {
     addMsg(`Frost erupts outward — ${targets.length} ${targets.length === 1 ? 'foe is' : 'foes are'} frozen solid!`, 'm-magic');
     for (const m of targets) {
       m.hp -= dmg;
-      m.frozen = hasBoon('b_frost') ? 5 : 3;
+      m.frozen = (m.boss || m.mini) ? 1 : (hasBoon('b_frost') ? 5 : 3); // bosses shrug off deep cold
       m.flashT = 1;
       m.awake = true;
       spawnBurst(m.x, m.y, '#9ee8ff', 12, 80);
@@ -1455,6 +1497,8 @@ function castSpell(i) {
       for (const key of G.visible) {
         const [x, y] = key.split(',').map(Number);
         if (!valid(x, y) || !noWare(x, y)) continue;
+        // a blink that lands inside a telegraphed beam lane is no escape at all
+        if (G.monsters.some(mm => mm.beam && mm.beam.some(bt => bt.x === x && bt.y === y))) continue;
         let nearest = 1e9;
         for (const mm of G.monsters) if (mm.awake) nearest = Math.min(nearest, dist2(x, y, mm.x, mm.y));
         if (nearest === 1e9) nearest = dist2(x, y, p.x, p.y); // no threats: just go far
@@ -1751,6 +1795,7 @@ function monstersAct() {
     if (m.windup === 1) {
       m.windup = 0;
       const mult = 2;
+      m.windupRest = 1; // a swung-and-missed heavy needs a beat — re-telegraph spam made trolls a stalemate
       if (p.x === m.windupX && p.y === m.windupY && cheb(m.x, m.y, p.x, p.y) <= 1 && !RNG.chance(playerDodge())) {
         const dmg = Math.max(1, Math.round(m.atk * mult) + RNG.int(-1, 1) - playerDef());
         addMsg(`The blow lands like a falling gate — ${dmg} damage!`, 'm-bad');
@@ -1886,8 +1931,10 @@ function monstersAct() {
         }
         if (best) { m.x = best[0]; m.y = best[1]; if (!monsterStepHazard(m)) continue; continue; }
       }
-      // heavy bruisers often telegraph a crushing blow instead of swinging
-      if (m.heavy && RNG.chance(m.mini ? 0.5 : 0.6)) {
+      // heavy bruisers often telegraph a crushing blow instead of swinging —
+      // but never twice in a row after a whiff (punish window stays open)
+      if (m.windupRest > 0) m.windupRest--;
+      else if (m.heavy && RNG.chance(m.mini ? 0.5 : 0.6)) {
         m.windup = 1;
         m.windupX = p.x; m.windupY = p.y;
         if (m.mini) GrukVoice.say('windup');
@@ -2111,14 +2158,14 @@ function cancelTravel() {
   if (travelTimer) { clearInterval(travelTimer); travelTimer = null; }
 }
 
-function findPath(sx, sy, tx, ty, avoidTraps) {
+function findPath(sx, sy, tx, ty, avoidTraps, allowWares) {
   const map = G.map;
   const passable = (x, y) => {
     const i = map.idx(x, y);
     if (!map.explored[i] || !tileWalkable(map.tiles[i])) return false;
     if (avoidTraps && map.tiles[i] === T.TRAP && map.trapSeen[i] && !(x === tx && y === ty)) return false;
     // never path through shop wares unless they ARE the destination — walking buys them
-    if (G.shop.some(s => s.x === x && s.y === y) && !(x === tx && y === ty)) return false;
+    if (!allowWares && G.shop.some(s => s.x === x && s.y === y) && !(x === tx && y === ty)) return false;
     return true;
   };
   if (!passable(tx, ty)) return null;
@@ -2160,7 +2207,7 @@ function findPath(sx, sy, tx, ty, avoidTraps) {
 
 const watcher = () => G.monsters
   .filter(m => m.awake && m.frozen === 0 && G.visible.has(m.x + ',' + m.y)
-    && dist2(m.x, m.y, G.player.x, G.player.y) <= 49) // a bat idling across the room shouldn't gate auto-explore
+    && dist2(m.x, m.y, G.player.x, G.player.y) <= 36) // only nearby watchers gate travel — veterans' top time-tax
   .sort((a, b) => dist2(a.x, a.y, G.player.x, G.player.y) - dist2(b.x, b.y, G.player.x, G.player.y))[0];
 const dangerVisible = () => !!watcher();
 const compass = (x, y) => {
@@ -2191,7 +2238,8 @@ function startTravelTo(tx, ty) {
       tx = best[0]; ty = best[1];
     }
   }
-  const path = findPath(G.player.x, G.player.y, tx, ty, true) || findPath(G.player.x, G.player.y, tx, ty, false);
+  let path = findPath(G.player.x, G.player.y, tx, ty, true) || findPath(G.player.x, G.player.y, tx, ty, false);
+  if (!path || !path.length) path = findPath(G.player.x, G.player.y, tx, ty, false, true); // last resort: cross the merchant's carpet
   if (!path || !path.length) { addMsg('No path there — the way is blocked.', 'm-dim'); return; }
   cancelTravel();
   travelPath = path;
@@ -2209,7 +2257,12 @@ function stepTravel() {
   const hp0 = G.player.hp;
   const poisonTick = G.player.poison > 0 ? 1 : 0; // poison's 1/turn drip shouldn't halt travel
   const next = travelPath.shift();
+  const wasWare = G.shop.some(s => s.x === next.x && s.y === next.y) && !(travelPath.length === 0);
   tryMove(next.x - G.player.x, next.y - G.player.y);
+  if (wasWare && G.player.x === next.x && G.player.y === next.y) {
+    cancelTravel(); // you stopped on the merchant's carpet — buying is YOUR call
+    return;
+  }
   if (G.state !== 'PLAY' || G.player.x !== next.x || G.player.y !== next.y || G.player.hp < hp0 - poisonTick) { cancelTravel(); return; }
   if (travelPath && !travelPath.length) cancelTravel();
 }
@@ -2267,7 +2320,35 @@ function autoExplore() {
     }
   }
   if (!target) {
-    // exploration done — route to loot left behind before declaring the floor dry
+    // exploration done — fetch seen ground loot first. Unreachable or
+    // unpickupable targets are blacklisted after one failure, or the fetcher
+    // wedges O for the rest of the floor (vet2 audit, bugs 2-3)
+    {
+      if (!G.fetchSkip) G.fetchSkip = {};
+      const packFull = p.inventory.length >= 10;
+      let it2 = null, id2 = 1e9;
+      for (const it of G.items) {
+        const k2 = it.x + ',' + it.y;
+        if (G.fetchSkip[k2]) continue;
+        if (packFull && !it.gold) continue; // can't carry it anyway
+        const i2 = map.idx(it.x, it.y);
+        if (!map.fovSeen[i2] || !tileWalkable(map.tiles[i2])) continue;
+        const d2i = dist2(it.x, it.y, p.x, p.y);
+        if (d2i < id2) { id2 = d2i; it2 = it; }
+      }
+      if (it2) {
+        const k2 = it2.x + ',' + it2.y;
+        const reachable = findPath(p.x, p.y, it2.x, it2.y, true) || findPath(p.x, p.y, it2.x, it2.y, false);
+        if (!reachable || !reachable.length) {
+          G.fetchSkip[k2] = 1; // sealed pocket — stop trying, let the floor finish
+          autoExplore();
+          return;
+        }
+        addMsg(it2.gold ? 'Coin still glints on the floor — you go to claim it.' : 'Something left behind — you go back for it.', 'm-dim');
+        startTravelTo(it2.x, it2.y);
+        return;
+      }
+    }
     if (p.keys > 0) {
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
         if (map.explored[map.idx(x, y)] && map.tiles[map.idx(x, y)] === T.GOLDCHEST) {
@@ -2438,6 +2519,23 @@ function backToTitle() {
   $('death-screen').classList.add('hidden');
   $('win-screen').classList.add('hidden');
   $('title-screen').classList.remove('hidden');
+  // the sidebar kept showing the dead run's gear under the title screen
+  // (obvious on the stacked mobile layout) — scrub it back to a blank slate
+  try {
+    const inv = $('inv-list'); if (inv) inv.innerHTML = '';
+    const sp = $('spell-panel'); if (sp) sp.style.display = 'none';
+    const hf = $('hp-fill'); if (hf) hf.style.width = '0%';
+    const mf = $('mana-fill'); if (mf) mf.style.width = '0%';
+    const st = $('status-line'); if (st) st.innerHTML = '';
+    const ob = $('owned-boons'); if (ob) ob.innerHTML = '';
+    for (const [id, txt] of [['weapon-text', 'bare fists'], ['armor-text', 'tattered rags'], ['ring-text', 'bare finger']]) {
+      const el = $(id); if (el) el.textContent = txt;
+    }
+    for (const [id, txt] of [['atk-text', '—'], ['def-text', '—'], ['depth-text', '—'], ['gold-text', '—'], ['hp-text', ''], ['mana-text', '']]) {
+      const el = $(id); if (el) el.textContent = txt;
+    }
+    if (typeof mmCtx !== 'undefined' && mmCtx) mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
+  } catch (e) { /* cosmetic only */ }
 }
 
 /* ---------- options (volume, shake) ---------- */
@@ -2510,7 +2608,7 @@ function saveRun() {
       lichSaid: G.lichSaid, echo: G.echo, darkNext: !!G.darkNext, dailyBase: G.dailyBase,
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
-      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen,
+      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -2548,6 +2646,7 @@ function loadRun() {
   G.gildedWarned = s.gildedWarned || {};
   G.wareWarn = s.wareWarn || {};
   G.shopSeen = !!s.shopSeen;
+  G.darkUsed = !!s.darkUsed;
   G.player = s.player; G.monsters = s.monsters; G.items = s.items;
   G.shop = s.shop || []; G.decals = s.decals || [];
   const m = new GameMap(s.map.depth);
@@ -2749,6 +2848,44 @@ for (const chip of document.querySelectorAll('.diff-chip')) {
   }));
 })();
 
+// Feedback widget reads window.GuruWidgetMetadata at submit time (highest
+// precedence merge), so a getter here means every whisper to the Keeper
+// carries a live snapshot of the run — bug reports arrive with the state
+// that produced them instead of a prose reconstruction.
+function gameStateSnapshot() {
+  try {
+    const p = G.player;
+    const snap = {
+      state: G.state,
+      class: G.classDef ? G.classDef.name : null,
+      difficulty: G.diff ? G.diff.name : null,
+      daily: !!G.daily,
+      daily_seed: G.dailyBase != null ? G.dailyBase : undefined,
+      depth: G.depth, turn: G.turn, floor_turns: G.floorTurns,
+      score: score(),
+    };
+    if (p) {
+      snap.hp = p.hp; snap.max_hp = p.maxHp;
+      snap.mana = p.mana; snap.gold = p.gold; snap.kills = G.kills;
+      snap.weapon = p.weapon || null; snap.armor = p.armor || null; snap.ring = p.ring || null;
+      snap.boons = Object.keys(p.boons || {});
+    }
+    const logEl = $('log');
+    if (logEl) {
+      // server rejects metadata >10KB outright — keep the tail tight
+      snap.recent_log = Array.from(logEl.children).slice(-15).map(d => (d.textContent || '').slice(0, 160));
+    }
+    return snap;
+  } catch (e) {
+    return { snapshot_error: String(e) };
+  }
+}
+window.GuruWidgetMetadata = window.GuruWidgetMetadata || {};
+Object.defineProperty(window.GuruWidgetMetadata, 'game_state', {
+  enumerable: true,
+  get: gameStateSnapshot,
+});
+
 canvas.addEventListener('mousemove', ev => { FX.hover = canvasToTile(ev); });
 canvas.addEventListener('mouseleave', () => { FX.hover = null; });
 canvas.addEventListener('click', ev => {
@@ -2827,6 +2964,12 @@ canvas.addEventListener('click', ev => {
     cancelTravel();
     if (G.shop.some(s => s.x === p.x && s.y === p.y)) { if (onEnterTile(p.x, p.y)) afterPlayerTurn(); return; }
     if (G.map.get(p.x, p.y) === T.STAIRS) { descend(); return; }
+    if (G.map.get(p.x, p.y) === T.DARKSTAIRS) {
+      if (G.darkAsk === G.turn) { G.darkAsk = null; descend(); return; }
+      G.darkAsk = G.turn;
+      addMsg('The dark stair plunges PAST the next floor — tap again to dare it.', 'm-bad');
+      return;
+    }
     addMsg('You wait, listening to the dark.', 'm-dim');
     afterPlayerTurn();
     return;
@@ -2860,7 +3003,7 @@ function toggleHelp() {
 function printHelp() {
   addMsg('Move/attack: WASD, arrows, QEZC diagonals — bump enemies to fight.', 'm-dim');
   addMsg('Click: travel or attack adjacent · O auto-explore · Space wait · Enter descend.', 'm-dim');
-  addMsg('1–0 use items (Shift+digit or right-click to drop) · V/B abilities · Esc pause · ? help.', 'm-dim');
+  addMsg('1–0 use items (Shift+digit or right-click to drop) · V/B abilities · Z zoom · Esc pause · ? help.', 'm-dim');
   if (G.classId === 'mage') {
     addMsg('Spellcraft: firebolt flies 3/turn at the nearest foe — fast movers can dodge it; point-blank never misses.', 'm-dim');
     addMsg('Nova freezes 2 tiles around you for ~3 turns · Blink jumps ≤5 tiles (wild) · kills siphon +2 mana · ⚔ Attack powers spells too.', 'm-dim');
@@ -2951,11 +3094,24 @@ window.addEventListener('keydown', ev => {
     else addMsg('Blink [V] is your way through space.', 'm-dim');
     return;
   }
+  if (key === 'z') {
+    const zl = cycleZoom();
+    addMsg(`The dark draws ${zl === 1 ? 'back — the whole floor in view' : zl === 1.5 ? 'closer' : 'close enough to smell'}. (Z to change)`, 'm-dim');
+    return;
+  }
   if (key === 'o') { autoExplore(); return; }
   if (MOVE_KEYS[key] && !ev.shiftKey) { tryMove(...MOVE_KEYS[key]); return; }
   if (key === ' ' || key === '.') { addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); return; }
   if (key === 'enter' || ev.key === '>') {
-    const onStairs = G.map.get(G.player.x, G.player.y) === T.STAIRS;
+    const hereTile = G.map.get(G.player.x, G.player.y);
+    if (hereTile === T.DARKSTAIRS && G.state === 'PLAY') {
+      // a permanent floor skip deserves a second keystroke
+      if (G.darkAsk === G.turn) { G.darkAsk = null; descend(); return; }
+      G.darkAsk = G.turn;
+      addMsg('The dark stair plunges PAST the next floor — press Enter again to dare it.', 'm-bad');
+      return;
+    }
+    const onStairs = hereTile === T.STAIRS;
     if (!onStairs && G.state === 'PLAY') {
       if (typeof travelPath !== 'undefined' && travelPath && travelPath.length) return; // already walking — don't stutter the journey
       let sx = -1, sy = -1;
