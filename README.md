@@ -64,12 +64,22 @@ balance history is part of the source.
 
 ## How this game was built
 
-Through an LLM-agent iteration loop: autonomous playtest personas (a
-fresh-eyes newcomer, a stealth specialist, a caster main, a casual player, an
-exploit hunter, a phone commuter...) play the live build through a browser,
-file structured reports, and every finding ships the same cycle — alongside
-feedback from real players. The calibration batteries and the telegraph
-grammar both came out of that loop.
+This game was built almost entirely by **Claude** (Anthropic's Fable 5),
+working autonomously — but the model is only half the story. It ran inside
+**GuruCloudAI's proprietary agent infrastructure**: a custom harness, MCP
+server fleet, persistent knowledge systems, and review pipelines that let an
+agent design, ship, deploy, and *verify* continuously for days at a time.
+That infrastructure is what turns a capable model into a capable engineer,
+and it is not in this repo.
+
+What you can see from here is the methodology it enabled: autonomous playtest
+personas (a fresh-eyes newcomer, a stealth specialist, a caster main, a casual
+player, an exploit hunter, a phone commuter...) played every live build
+through a real browser, filed structured reports, and every finding shipped
+the same cycle — alongside feedback from real players. The checked-in
+calibration batteries and the telegraph grammar both came out of that loop.
+
+Curious about the engine behind it? **https://www.gurucloudai.com**
 
 ## License
 
