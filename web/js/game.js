@@ -133,6 +133,7 @@ function spawnProjectile(fx, fy, tx, ty, opts) {
     fx, fy, dx: dx / len, dy: dy / len,
     speed: opts.speed || 2, dmg: opts.dmg, color: opts.color,
     fromPlayer: !!opts.fromPlayer, drain: !!opts.drain, src: opts.src || null,
+    targetName: opts.targetName || null,
   });
 }
 /* impact resolution: damage is instant, but the VISUAL orb finishes its
@@ -161,7 +162,11 @@ function stepProjectiles() {
       const tx = Math.round(pr.fx), ty = Math.round(pr.fy);
       if (!G.map.inBounds(tx, ty) || G.map.opaque(tx, ty)) {
         boltImpact(pr, tx, ty, 5, 40);
-        if (pr.fromPlayer) addMsg('Your firebolt shatters against the stone — nothing but sparks.', 'm-dim');
+        // a wall impact when the bolt HAD a mark means the mark moved —
+        // name the dodge or it reads as a bug (mage persona: 'feels terrible')
+        if (pr.fromPlayer) addMsg(pr.targetName
+          ? `${pr.targetName} twists aside — your bolt shatters on the stone.`
+          : 'Your firebolt shatters against the stone — nothing but sparks.', 'm-dim');
         dead = true; break;
       }
       const m = monsterAt(tx, ty);
@@ -745,7 +750,9 @@ function onEnterTile(nx, ny) {
     } else if (p.gold < warePrice(ware)) {
       addMsg(`The ward refuses you — the ${ITEMS[ware.id].name} costs ${warePrice(ware)} gold.`, 'm-dim');
     } else if (!addItem(ware.id)) {
-      addMsg('Your pack is too full to carry it.', 'm-dim');
+      // the blocked-purchase moment is exactly when players need the drop
+      // controls spelled out (mage persona: 'no drop key; help confirms none')
+      addMsg(`Your pack is too full to carry it. ${(typeof MOBILE_UI !== 'undefined' && MOBILE_UI) ? 'Hold a pack row (☰) and DROP something' : 'Shift+digit (or right-click a pack row) drops an item'}.`, 'm-dim');
     } else {
       p.gold -= warePrice(ware);
       G.purchases++;
@@ -785,6 +792,13 @@ function onEnterTile(nx, ny) {
       Sfx.gold();
       spawnFloater(nx, ny, `+${it.gold}$`, '#ffd75e');
       G.items.splice(i, 1);
+    } else if (ITEMS[it.id].kind !== 'potion' && ITEMS[it.id].kind !== 'scroll' && !ITEMS[it.id].stack
+        && (p[ITEMS[it.id].kind] === it.id || p.inventory.some(e => e.id === it.id))) {
+      // identical gear neither stacks nor sells — hoovering a fourth sword
+      // only clogs the pack (mage persona run 2: four identical swords)
+      if (!G.dupeSkips) G.dupeSkips = {};
+      if (!G.dupeSkips[it.id]) { G.dupeSkips[it.id] = 1; addMsg(`(another ${ITEMS[it.id].name} — you carry one already, so you leave it)`, 'm-dim'); }
+      continue;
     } else if (addItem(it.id)) {
       addMsg(`You pick up the ${ITEMS[it.id].name}.`, 'm-good');
       const nd = ITEMS[it.id];
@@ -792,7 +806,7 @@ function onEnterTile(nx, ny) {
         const cur = p[nd.kind] ? ITEMS[p[nd.kind]].bonus : -1;
         if (nd.bonus > cur) {
           const si = p.inventory.findIndex(e => e.id === it.id);
-          if (si >= 0) addMsg(`(better than your ${p[nd.kind] ? ITEMS[p[nd.kind]].name : 'bare ' + (nd.kind === 'weapon' ? 'fists' : nd.kind)} — press ${si === 9 ? 0 : si + 1} to ${nd.kind === 'weapon' ? 'wield' : 'wear'} it)`, 'm-gold');
+          if (si >= 0) addMsg(`(better than your ${p[nd.kind] ? ITEMS[p[nd.kind]].name : 'bare ' + (nd.kind === 'weapon' ? 'fists' : nd.kind)} — ${(typeof MOBILE_UI !== 'undefined' && MOBILE_UI) ? 'tap it in your pack (☰)' : `press ${si === 9 ? 0 : si + 1}`} to ${nd.kind === 'weapon' ? 'wield' : 'wear'} it)`, 'm-gold');
         }
       }
       Sfx.pickup();
@@ -896,6 +910,14 @@ function attackMonster(m, bonus = 0) {
   m.hp -= dmg;
   m.flashT = 1;
   m.awake = true;
+  // the caster's weapon drinks the blow: staff/orb melee scrapes +1 mana —
+  // converts the 0-mana stick-fight death spiral into a recovery loop
+  // (mage persona's balance ask; self-limiting, the ward re-spends it)
+  if (G.classDef.mana > 0 && p.weapon && (ITEMS[p.weapon].trait === 'mana' || ITEMS[p.weapon].trait === 'siphon')
+      && p.mana < p.maxMana) {
+    p.mana++;
+    spawnFloater(p.x, p.y, '+1 mana', '#9ecbff');
+  }
   lunge(p, m.x, m.y, 0.34);      // swing into the blow
   lunge(m, p.x, p.y, -0.18);     // knock the target back
   if (backstab) {
@@ -1568,7 +1590,7 @@ function castSpell(i) {
     if (sCrit) boltDmg = Math.round(boltDmg * 1.5);
     spawnProjectile(p.x, p.y, best.x, best.y, {
       dmg: boltDmg, color: '#ff8c5e', fromPlayer: true, crit: sCrit,
-      speed: hasBoon('b_blaze') ? 5 : 3,
+      speed: hasBoon('b_blaze') ? 5 : 3, targetName: theM(best),
     });
     addMsg(sCrit ? 'You loose a firebolt — it SCREAMS down the corridor!' : 'You loose a firebolt down the corridor.', 'm-magic');  } else if (i === 1) { // Frost Nova
     const targets = G.monsters.filter(m => cheb(m.x, m.y, p.x, p.y) <= 2 && G.visible.has(m.x + ',' + m.y));
@@ -1716,12 +1738,14 @@ function useItem(index) {
     if (old) inv.push({ id: old, count: 1 });
     if (slot === 'weapon' && G.classDef.mana > 0) {
       // the staff's well of mana travels with the wood — and only speaks
-      // to those who already hear it (no phantom mana bar for the warrior)
+      // to those who already hear it (no phantom mana bar for the warrior).
+      // It changes CAPACITY only: granting current mana on equip let a
+      // swap cycle mint +6 a turn (exploit-hunter confirmed, iter60)
       const manaOf = id => (id && ITEMS[id].trait === 'mana') ? 6 : 0;
       const delta6 = manaOf(entry.id) - manaOf(old);
       if (delta6) {
         p.maxMana = Math.max(0, p.maxMana + delta6);
-        p.mana = Math.min(p.maxMana, Math.max(0, p.mana + Math.max(0, delta6)));
+        p.mana = Math.min(p.maxMana, p.mana);
       }
     }
     const verb = slot === 'weapon' ? 'wield' : slot === 'armor' ? 'don' : 'slip on';
@@ -2821,7 +2845,7 @@ function updateContinueLine() {
   const el = $('continue-line');
   if (s && CLASSES[s.classId]) {
     el.classList.remove('hidden');
-    el.textContent = `[C] continue your run — ${CLASSES[s.classId].name.toLowerCase()}, floor ${s.depth}`;
+    el.textContent = `${(typeof MOBILE_UI !== 'undefined' && MOBILE_UI) ? '▶' : '[C]'} continue your run — ${CLASSES[s.classId].name.toLowerCase()}, floor ${s.depth}`;
   } else el.classList.add('hidden');
 }
 
@@ -2954,7 +2978,10 @@ requestAnimationFrame(titleFrame);
 /* ---------- fit layout to window ---------- */
 function fitView() {
   const wrap = $('wrap');
-  if (window.innerWidth <= 760) { wrap.style.transform = 'none'; return; } // phones: the stacked CSS layout takes over
+  // gate on the DEVICE, not the width: a phone turned landscape is 844px
+  // wide, and the scale() transform made #wrap the containing block for
+  // every fixed overlay — letterboxed canvas, clipped drawer (Maya round 2)
+  if ((typeof MOBILE_UI !== 'undefined' && MOBILE_UI) || window.innerWidth <= 760) { wrap.style.transform = 'none'; return; }
   const W = 1272, H = 814; // natural size of #wrap content
   const s = Math.min((window.innerWidth - 10) / W, (window.innerHeight - 10) / H);
   wrap.style.transform = `scale(${s})`;
@@ -3273,7 +3300,17 @@ window.addEventListener('keydown', ev => {
         const i = G.map.idx(x, y);
         if (G.map.explored[i] && G.map.tiles[i] === T.STAIRS) { sx = x; sy = y; break; }
       }
-      if (sx >= 0) { addMsg('You make for the stairs.', 'm-dim'); startTravelTo(sx, sy); return; }
+      if (sx >= 0) {
+        // descend always routes to the GRAY stairs; if a dark stair is also
+        // known, say so — a mage persona thought the skip silently failed
+        let darkKnown = false;
+        if (!G.darkUsed) for (let y2 = 0; y2 < G.map.h && !darkKnown; y2++) for (let x2 = 0; x2 < G.map.w; x2++) {
+          const i2 = G.map.idx(x2, y2);
+          if (G.map.explored[i2] && G.map.tiles[i2] === T.DARKSTAIRS) { darkKnown = true; break; }
+        }
+        addMsg(darkKnown ? 'You make for the gray stairs. (The dark stair waits elsewhere — walk to it to dare the plunge.)' : 'You make for the stairs.', 'm-dim');
+        startTravelTo(sx, sy); return;
+      }
     }
     descend(); return;
   }
@@ -3373,10 +3410,17 @@ let joySuppressClick = false;
     const sy = [0, 1, 1, 1, 0, -1, -1, -1][oct];
     const wasNull = dirKey === null;
     dirKey = KEYS[`${sx},${sy}`];
-    if (wasNull && dirKey) { step(); clearInterval(timer); timer = setInterval(step, REPEAT_MS); }
+    // step now, but WAIT before auto-repeat: the repeat used to start at
+    // 210ms flat, so any flick slower than that double-stepped (Maya r2:
+    // '2 steps per flick on a laggy device — into traps')
+    if (wasNull && dirKey) {
+      step();
+      clearTimeout(timer); clearInterval(timer);
+      timer = setTimeout(() => { timer = setInterval(step, REPEAT_MS); }, 330);
+    }
   };
   const end = () => {
-    touchId = null; dirKey = null; clearInterval(timer); timer = null;
+    touchId = null; dirKey = null; clearTimeout(timer); clearInterval(timer); timer = null;
     base.classList.add('hidden');
     knob.style.transform = 'translate(-50%, -50%)';
     if (dragged) { joySuppressClick = true; setTimeout(() => { joySuppressClick = false; }, 400); }
@@ -3426,7 +3470,6 @@ let joySuppressClick = false;
       '<div class="hud-chips" id="mh-chips"></div>' +
       '<input type="range" id="mh-zoom" min="1" max="3" step="0.5" title="zoom">' +
     '</div>' +
-    '<div id="mtip" class="hidden"></div>' +
     '<div class="cluster-left">' +
       '<button class="mbtn small" id="mb-bag" title="pack &amp; map">\u2630</button>' +
       '<button class="mbtn small" id="mb-explore" title="auto-explore">\u25ce</button>' +
@@ -3435,6 +3478,25 @@ let joySuppressClick = false;
     '</div>' +
     '<div class="cluster-right" id="mh-abilities"></div>';
   document.body.appendChild(hud);
+  // the detail card lives on BODY, above the drawer — inside #mhud its
+  // z-index was capped by the hud's stacking context and the drawer
+  // rendered over it (Maya round 2: card invisible, DROP untappable)
+  const tipEl = document.createElement('div');
+  tipEl.id = 'mtip'; tipEl.className = 'hidden';
+  document.body.appendChild(tipEl);
+  // tap-anywhere-above scrim closes the pack — the drawer covered every
+  // HUD button including ☰ itself and became a one-way trap
+  const scrim = document.createElement('div');
+  scrim.id = 'mscrim';
+  scrim.addEventListener('click', () => document.body.classList.remove('drawer-open'));
+  document.body.appendChild(scrim);
+  // and an explicit close bar rides the top of the pack
+  const closeBar = document.createElement('button');
+  closeBar.id = 'mdrawer-close';
+  closeBar.textContent = '✕ close pack';
+  closeBar.addEventListener('click', () => document.body.classList.remove('drawer-open'));
+  const sb = $('sidebar');
+  if (sb) sb.insertBefore(closeBar, sb.firstChild);
 
   const tap = (id, fn) => { const b = hud.querySelector('#' + id); if (b) b.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); fn(); }); };
   // the pack stays shut during boon choice — the drawer was opening OVER
@@ -3475,7 +3537,7 @@ let joySuppressClick = false;
 
   // long-press detail cards: 'a nice little arrow to show the details on
   // the things' (widget cb93f90b) — hold any button or pack row to read it
-  const tip = hud.querySelector('#mtip');
+  const tip = tipEl;
   let tipTimer = null, tipSuppress = false;
   const hideTip = () => { tip.classList.add('hidden'); tip.innerHTML = ''; };
   const showTip = html => { tip.innerHTML = html; tip.classList.remove('hidden'); };

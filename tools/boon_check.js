@@ -111,13 +111,17 @@ const TESTS = {
   b_glass(p) { const a = p.baseAtk, d = p.baseDef; g.applyBoon('b_glass'); return p.baseAtk === a + 3 && p.baseDef === d - 1; },
   b_keen(p) {
     // +12% crit rides the attack roll: with base crit forced to 0, ~12% of
-    // hits should double. Statistical: 600 swings, expect >25 crits.
+    // hits should double. Detection must catch EVERY crit: with def 0 the
+    // normal roll tops at atk+2 and a crit floors at 2*(atk-1) — disjoint
+    // bands. (The old proxy overlapped the bands and only saw half the
+    // crits, making the >10 bound a coin flip. Flaked ~40% of runs.)
     g.applyBoon('b_keen'); p.crit = 0;
-    const s = adjSpot(p); const m = g.spawnMonster('troll', s[0], s[1]); m.awake = true;
+    const s = adjSpot(p); const m = g.spawnMonster('troll', s[0], s[1]); m.awake = true; m.def = 0;
+    const atk = g.playerAtk();
     let crits = 0;
-    for (let i = 0; i < 200; i++) { m.hp = 9999; m.frozen = 0; g.attackMonster(m); if (9999 - m.hp > g.playerAtk() + 4) crits++; }
+    for (let i = 0; i < 200; i++) { m.hp = 9999; m.frozen = 0; g.attackMonster(m); if (9999 - m.hp >= 2 * (atk - 1)) crits++; }
     G.monsters.length = 0;
-    return crits > 10 && crits < 70; // ~24 expected at 12%/200
+    return crits > 10 && crits < 70; // ~24 expected at 12%/200, sd ~4.6
   },
   b_font(p) { const mm = p.maxMana, mh = p.maxHp; g.applyBoon('b_font'); return p.maxMana === mm + 8 && p.maxHp === mh - 4; },
   b_blaze(p) {
@@ -349,10 +353,32 @@ console.log('\n=== weapons with souls · rings · actives ===');
   p.inventory.length = 0; p.inventory.push({ id: 'w_dagger', count: 1 });
   g.useItem(0); // swap away — the well leaves with the wood
   check('staff mana leaves on unequip', p.maxMana === mm0, `maxMana ${p.maxMana}, want ${mm0}`);
+  // the swap cycle must mint NOTHING (exploit-hunter confirmed +6/cycle, iter60)
+  p.mana = 3;
+  for (let i = 0; i < 4; i++) {
+    p.inventory.length = 0;
+    p.inventory.push({ id: i % 2 === 0 ? 'w_staff' : 'w_dagger', count: 1 });
+    g.useItem(0);
+  }
+  // each swap costs a turn (natural +1/turn regen is fine); the old bug
+  // added +6 per re-equip ON TOP of regen
+  check('staff swap cycle mints no mana beyond regen', p.mana <= 3 + 4, `mana ${p.mana}, started 3, 4 turns spent`);
   p = fresh('warrior');
   p.inventory.length = 0; p.inventory.push({ id: 'w_staff', count: 1 });
   g.useItem(0);
   check('staff gives the warrior no phantom mana bar', p.maxMana === 0, `maxMana ${p.maxMana}, want 0`);
+
+  // caster weapons drink the blow: staff/orb melee scrapes +1 mana (iter60)
+  p = fresh('mage'); p.weapon = 'w_staff'; p.mana = 0;
+  { const spot = adjSpot(p); const m = g.spawnMonster('golem', spot[0], spot[1]); m.awake = true; m.hp = 999;
+    g.attackMonster(m);
+    check('staff melee scrapes +1 mana', p.mana === 1, `mana ${p.mana}`);
+    G.monsters.length = 0; }
+  p = fresh('warrior'); p.weapon = 'w_staff'; p.mana = 0;
+  { const spot = adjSpot(p); const m = g.spawnMonster('golem', spot[0], spot[1]); m.awake = true; m.hp = 999;
+    g.attackMonster(m);
+    check('melee siphon only speaks to casters', p.mana === 0, `mana ${p.mana}`);
+    G.monsters.length = 0; }
 
   // soulglass orb: kills siphon +2 total
   p = fresh('mage'); p.weapon = 'w_orb'; p.mana = 0;

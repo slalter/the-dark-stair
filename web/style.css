@@ -559,3 +559,24 @@ body.mobile-ui #guru-widget-btn {
   body.mobile-ui #log { max-height: 3.2em; right: 0; left: 230px; bottom: 70px; }
   body.mobile-ui #log.expanded { left: 0; bottom: 0; }
 }
+
+/* Maya round 2: the drawer trap, the buried continue, the occluded card */
+#mscrim { display: none; }
+body.mobile-ui.drawer-open #mscrim {
+  display: block; position: fixed; inset: 0; z-index: 39;
+  background: rgba(5, 5, 10, 0.35);
+}
+body.mobile-ui #mtip { z-index: 70; position: fixed; }
+#mdrawer-close { display: none; }
+body.mobile-ui.drawer-open #mdrawer-close {
+  display: block; grid-column: 1 / -1; width: 100%;
+  padding: 12px; border-radius: 8px; font: bold 14px Consolas, monospace;
+  background: #1c1c36; color: var(--text); border: 1px solid var(--panel-border);
+  touch-action: manipulation;
+}
+body.mobile-ui #continue-line {
+  order: -1; display: block;
+  background: rgba(126, 224, 163, 0.12); border: 1px solid rgba(126, 224, 163, 0.4);
+  border-radius: 10px; padding: 14px 18px; font-weight: bold;
+}
+body.mobile-ui #continue-line.hidden { display: none; }
