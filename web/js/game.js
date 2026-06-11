@@ -367,7 +367,7 @@ function newPlayer(cls) {
     gold: 0, poison: 0,
     keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0,
     boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
-    guardT: 0, guardCd: 0, vaultCd: 0,
+    guardT: 0, guardCd: 0, vaultCd: 0, vaultStrike: 0,
     inventory: [], weapon: null, armor: null, ring: null,
     flashT: 0,
   };
@@ -825,6 +825,7 @@ function afterPlayerTurn() {
   if (p.guardCd > 0) p.guardCd--;
   if (p.vaultCd > 0) p.vaultCd--;
   if (p.guardT > 0) p.guardT--; // the planted shield lowers after the foes' reply
+  if (p.vaultStrike > 0) p.vaultStrike--; // the opened back closes fast
   // the dread clock: linger too long and the dark sends MELEE hunters (capped, worthless XP)
   const dreadAt = G.diff.dreadAt - dreadShift();
   if (G.floorTurns === dreadAt - 29) addMsg('The shadows lean closer. Best not linger.', 'm-dim');
@@ -885,7 +886,8 @@ function afterPlayerTurn() {
 
 function attackMonster(m, bonus = 0) {
   const p = G.player;
-  const backstab = G.classId === 'rogue' && (!m.awake || m.frozen > 0 || m.stirring);
+  const backstab = G.classId === 'rogue' && (!m.awake || m.frozen > 0 || m.stirring || p.vaultStrike > 0);
+  if (G.classId === 'rogue' && p.vaultStrike > 0) p.vaultStrike = 0; // one strike per vault
   const crit = !backstab && RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0));
   let dmg = Math.max(1, playerAtk() + bonus + RNG.int(-1, 2) - m.def);
   if (m.frozen > 0 && hasBoon('b_frost')) dmg += 2;
@@ -1025,6 +1027,9 @@ function hurtPlayer(dmg, srcName) {
   // BULWARK (active): the shield is planted — nothing meaningful gets through
   if (p.guardT > 0 && dmg > 1) {
     spawnFloater(p.x, p.y, `bulwark -${dmg - 1}`, '#9ecbff');
+    // truthful numbers at the mitigation boundary (veteran playtest: the
+    // attack line printed the unreduced hit and taught the wrong lesson)
+    addMsg(`Your planted shield drinks it — ${dmg - 1} stopped, 1 gets through.`, 'm-good');
     dmg = 1;
   } else if (G.classId === 'warrior' && !p.braced && dmg > 1) {
     // 1 + half armor: 2+armor sim-tested at 40% standard / 25% NIGHTMARE
@@ -1442,23 +1447,28 @@ function castVault() {
   if (p.vaultCd > 0) { addMsg(`Vault recovers in ${p.vaultCd} ${p.vaultCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); return; }
   // candidate: adjacent monster with a free tile straight beyond it;
   // prefer the landing spot with the fewest foes breathing on it
-  let best = null, bestCrowd = 99;
+  let best = null, bestCrowd = 99, sawFoe = false;
   for (const [dx, dy] of DIRS8) {
     const m = monsterAt(p.x + dx, p.y + dy);
     if (!m) continue;
+    sawFoe = true;
     const lx = p.x + dx * 2, ly = p.y + dy * 2;
     if (!G.map.walkable(lx, ly) || monsterAt(lx, ly)) continue;
     let crowd = 0;
     for (const [adx, ady] of DIRS8) if (monsterAt(lx + adx, ly + ady)) crowd++;
     if (crowd < bestCrowd) { bestCrowd = crowd; best = { lx, ly, m }; }
   }
-  if (!best) { addMsg('No foe close enough to vault over.', 'm-dim'); return; }
+  // truthful refusals (veteran playtest: the wrong message 'gaslit me three times')
+  if (!best) { addMsg(sawFoe ? 'No room to land — the far side is blocked.' : 'No foe close enough to vault over.', 'm-dim'); return; }
   cancelTravel();
   spawnBurst(p.x, p.y, '#a8f0c0', 8, 60);
   p.x = best.lx; p.y = best.ly;
   lunge(p, best.m.x, best.m.y, -0.4);
   p.vaultCd = 8 - tempoEdge();
-  addMsg(`You vault clean over the ${best.m.name} and land soft behind it.`, 'm-good');
+  // 'land soft behind it' now cashes out: your next strike this turn or the
+  // next is a true backstab — Vault is the rogue's sanctioned elite answer
+  p.vaultStrike = 2;
+  addMsg(`You vault clean over the ${best.m.name} and land soft behind it — its back is yours.`, 'm-good');
   Sfx.dash ? Sfx.dash() : Sfx.equip();
   if (G.state !== 'PLAY') return;
   if (!onEnterTile(p.x, p.y)) return;
@@ -3138,7 +3148,7 @@ function toggleHelp() {
 function printHelp() {
   addMsg('Move/attack: WASD, arrows, QEZC diagonals — bump enemies to fight.', 'm-dim');
   addMsg('Click: travel or attack adjacent · O auto-explore · Space wait · Enter descend.', 'm-dim');
-  addMsg('1–0 use items (Shift+digit or right-click to drop) · V/B abilities · Z zoom · Esc pause · ? help.', 'm-dim');
+  addMsg('1–0 use items (Shift+digit or right-click to drop) · V/B abilities · X zoom · Esc pause · ? help.', 'm-dim');
   if (G.classId === 'mage') {
     addMsg('Spellcraft: firebolt flies 3/turn at the nearest foe — fast movers can dodge it; point-blank never misses.', 'm-dim');
     addMsg('Nova freezes 2 tiles around you for ~3 turns · Blink jumps ≤5 tiles (wild) · kills siphon +2 mana · ⚔ Attack powers spells too.', 'm-dim');
@@ -3229,9 +3239,11 @@ window.addEventListener('keydown', ev => {
     else addMsg('Blink [V] is your way through space.', 'm-dim');
     return;
   }
-  if (key === 'z') {
+  // zoom lives on X — Z is a DIAGONAL (veteran playtest: zoom had shadowed
+  // down-left movement for both keyboard AND the joystick's key dispatch)
+  if (key === 'x') {
     const zl = cycleZoom();
-    addMsg(`The dark draws ${zl === 1 ? 'back — the whole floor in view' : zl === 1.5 ? 'closer' : 'close enough to smell'}. (Z to change)`, 'm-dim');
+    addMsg(`The dark draws ${zl === 1 ? 'back — the whole floor in view' : zl === 1.5 ? 'closer' : 'close enough to smell'}. (X to change)`, 'm-dim');
     return;
   }
   if (key === 'o') { autoExplore(); return; }

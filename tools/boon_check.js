@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault };
+  useItem, castBulwark, castVault, itemPoolForDepth };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -405,6 +405,34 @@ console.log('\n=== weapons with souls · rings · actives ===');
   p = fresh('rogue'); G.monsters.length = 0;
   { const x0 = p.x, y0 = p.y; g.castVault();
     check('vault refuses with no foe adjacent', p.x === x0 && p.y === y0 && p.vaultCd === 0, `moved or burned cd`); }
+
+  // vault opens the back: the strike after a vault is a true backstab (iter58)
+  p = fresh('rogue');
+  { const spot = laneSpot(p, 2);
+    if (!spot) console.log('SKIP  vault-backstab — no clear lane on this map seed');
+    else {
+      const dx = Math.sign(spot[0] - p.x), dy = Math.sign(spot[1] - p.y);
+      const m = g.spawnMonster('golem', p.x + dx, p.y + dy);
+      m.awake = true; m.def = 0; m.hp = 500;
+      p.crit = 0; p.baseAtk = 10;
+      g.castVault();
+      check('vault arms the backstab window', p.vaultStrike >= 1, `vaultStrike ${p.vaultStrike}`);
+      const hp0 = m.hp;
+      g.attackMonster(m);
+      const dealt = hp0 - m.hp;
+      const base = 10 + g.ITEMS[p.weapon].bonus;
+      check('post-vault strike is a x3 backstab', dealt >= 3 * (base - 1) && dealt <= 3 * (base + 2), `dealt ${dealt}, base ${base}`);
+      check('the opened back closes after one strike', p.vaultStrike === 0, `vaultStrike ${p.vaultStrike}`);
+    } }
+
+  // caster gear only falls for casters (iter58 loot truth)
+  fresh('warrior');
+  { const ids4 = g.itemPoolForDepth(4).map(e => e[0]);
+    check('warrior pool carries no staff/orb', !ids4.includes('w_staff') && !ids4.includes('w_orb'), ids4.join(','));
+    check('warrior pool carries the maul', ids4.includes('w_maul')); }
+  fresh('mage');
+  { const ids4 = g.itemPoolForDepth(4).map(e => e[0]);
+    check('mage pool carries the orb', ids4.includes('w_orb'), ids4.join(',')); }
 }
 
 console.log(failures.length ? `\n${failures.length} FAILURES: ${failures.join(', ')}` : '\nall boons truthful');

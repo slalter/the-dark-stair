@@ -200,11 +200,17 @@ function itemPoolForDepth(d) {
     ['elixir_str', 2],
   ];
   if (d >= 2) pool.push(['potion_anti', 3]);
+  // caster gear only falls for casters: +6 max mana on a warrior is dead
+  // weight, and a veteran playtest rolled the staff 3 times in 9 on
+  // sword-hands while never once seeing fangs/maul/orb
+  const caster = typeof G !== 'undefined' && G.classDef && G.classDef.mana > 0;
   if (d <= 2) pool.push(['w_dagger', 1], ['a_leather', 1]);
-  if (d >= 2 && d <= 4) pool.push(['w_sword', 3], ['a_chain', 3], ['w_staff', 2]);
+  if (d >= 2 && d <= 4) pool.push(['w_sword', 3], ['a_chain', 3]);
+  if (caster && d >= 2 && d <= 4) pool.push(['w_staff', 3]);
   if (d >= 3) pool.push(['ring_regen', 1], ['ring_might', 1], ['ring_guard', 1], ['ring_focus', 1],
-    ['ring_swift', 1], ['ring_blood', 1], ['w_fangs', 2]);
-  if (d >= 4) pool.push(['w_axe', 2], ['a_plate', 2], ['w_maul', 1], ['w_orb', 1]);
+    ['ring_swift', 1], ['ring_blood', 1], ['w_fangs', 3]);
+  if (d >= 4) pool.push(['w_axe', 2], ['a_plate', 2], ['w_maul', 2]);
+  if (caster && d >= 4) pool.push(['w_orb', 2]);
   if (d >= 5) pool.push(['w_rune', 1], ['a_dragon', 1]);
   return pool;
 }
@@ -215,9 +221,12 @@ function itemPoolForDepth(d) {
 function shopStockForDepth(d) {
   const consumables = ['potion_heal', 'potion_anti', 'potion_vigor', 'elixir_str'];
   const scrolls = ['scroll_fire', 'scroll_tele', 'scroll_map'];
-  if (d >= 5) return ['potion_heal', RNG.pick(['w_rune', 'a_dragon', 'w_orb', 'w_maul']), RNG.pick(['ring_might', 'ring_guard', 'ring_focus', 'ring_swift', 'ring_blood'])];
-  const gear = d <= 2 ? ['w_sword', 'a_chain', 'ring_regen', 'w_staff']
-    : ['ring_might', 'ring_guard', 'ring_focus', 'ring_regen', 'ring_swift', 'ring_blood', 'w_fangs'];
+  const caster = typeof G !== 'undefined' && G.classDef && G.classDef.mana > 0;
+  if (d >= 5) return ['potion_heal',
+    RNG.pick(caster ? ['w_rune', 'a_dragon', 'w_orb', 'w_orb'] : ['w_rune', 'a_dragon', 'w_maul']),
+    RNG.pick(['ring_might', 'ring_guard', 'ring_focus', 'ring_swift', 'ring_blood'])];
+  const gear = d <= 2 ? (caster ? ['w_staff', 'w_staff', 'a_chain', 'ring_regen'] : ['w_sword', 'a_chain', 'ring_regen'])
+    : ['ring_might', 'ring_guard', 'ring_focus', 'ring_regen', 'ring_swift', 'ring_blood', 'w_fangs', 'w_maul'];
   return [RNG.pick(consumables), RNG.pick(scrolls), RNG.pick(gear)];
 }
 
