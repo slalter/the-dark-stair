@@ -363,7 +363,7 @@ function newPlayer(cls) {
     mana: cls.mana, maxMana: cls.mana,
     gold: 0, poison: 0,
     keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0,
-    boons: {}, momentum: 0, secondWind: false, bulwarkT: 0,
+    boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
     inventory: [], weapon: null, armor: null, ring: null,
     flashT: 0,
   };
@@ -790,6 +790,7 @@ function onEnterTile(nx, ny) {
 
 function afterPlayerTurn() {
   if (G.state !== 'PLAY') return;
+  G.player.braced = false; // warrior block guards one hit per player action
   stepProjectiles();
   if (G.state !== 'PLAY') return;
   monstersAct();
@@ -991,6 +992,29 @@ function killMonster(m) {
 
 function hurtPlayer(dmg, srcName) {
   const p = G.player;
+  // class defenses — every class meets steel its own way. Rogue evades
+  // (playerDodge, rolled at the attack site); warrior BLOCKS — braces behind
+  // armor to dull the first hit each turn; mage WARDS — mana drinks half of
+  // any blow at 1 mana per 2 damage. Deterministic so the player can plan
+  // around them, unlike dodge.
+  if (G.classId === 'warrior' && !p.braced && dmg > 1) {
+    // 1 + half armor: 2+armor sim-tested at 40% standard / 25% NIGHTMARE
+    // bot winrate (baseline ~10%/0%) — the wall must bend, not trivialize
+    const red = Math.min(dmg - 1, 1 + Math.ceil((p.armor ? ITEMS[p.armor].bonus : 0) / 2));
+    if (red > 0) {
+      dmg -= red; p.braced = true;
+      spawnFloater(p.x, p.y, `block -${red}`, '#ffd75e');
+      addMsg(`You brace behind your guard — ${red} damage turned aside.`, 'm-dim');
+    }
+  } else if (G.classId === 'mage' && p.mana > 0 && dmg > 1) {
+    const absorb = Math.min(Math.floor(dmg / 2), p.mana * 2);
+    if (absorb > 0) {
+      const cost = Math.ceil(absorb / 2);
+      p.mana -= cost; dmg -= absorb;
+      spawnFloater(p.x, p.y, `ward -${absorb}`, '#9ecbff');
+      addMsg(`Your ward flares — ${absorb} damage unmade for ${cost} mana.`, 'm-magic');
+    }
+  }
   p.hp -= dmg;
   G.floorDmg += dmg;
   p.momentum = 0;
@@ -2991,11 +3015,11 @@ function toggleHelp() {
   const cls = $('help-class-block');
   if (opening && cls) {
     cls.innerHTML = G.classId === 'mage'
-      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
+      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
       ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. A survivor of a botched stab screams. Frozen foes count as unaware.'
       : G.classId === 'warrior'
-      ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. You are the wall; make them come through you.'
+      ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. You BLOCK the first hit each turn — the heavier your armor, the more it turns aside — so one big foe blunts itself on you, but a pack bleeds you. You are the wall; make them come through you.'
       : '';
   }
 }

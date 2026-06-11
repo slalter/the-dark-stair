@@ -6,7 +6,7 @@ const CLASSES = {
     name: 'Warrior', color: '#ffd75e', glyphColor: '#ffd75e',
     hp: 42, atk: 8, def: 2, crit: 0.08, fov: 8, mana: 0, dodge: 0,
     blurb: 'Heavy hands, heavier patience.',
-    perks: ['42 HP · 8 ATK · 2 DEF', 'starts armed & armored', 'V: Cleave — strike all adjacent'],
+    perks: ['42 HP · 8 ATK · 2 DEF', 'blocks: armor dulls the first hit each turn', 'V: Cleave — strike all adjacent'],
     start: ['w_dagger', 'a_leather', 'potion_heal'],
   },
   rogue: {
@@ -20,7 +20,7 @@ const CLASSES = {
     name: 'Mage', color: '#9ecbff', glyphColor: '#a8d4ff',
     hp: 34, atk: 4, def: 0, crit: 0.05, fov: 8, mana: 20, dodge: 0.05,
     blurb: 'Why swing steel when reality bends?',
-    perks: ['20 mana · 4 spells', 'F bolt · G nova · H mend · V blink', 'fragile but devastating'],
+    perks: ['20 mana · 4 spells', 'wards: mana drinks half of every blow', 'F bolt · G nova · H mend · V blink'],
     start: ['potion_heal', 'scroll_fire'],
   },
 };
@@ -89,18 +89,21 @@ const BOONS = {
   b_font:     { name: 'Mana Font',       desc: '+8 max mana, +1 mana on kill — but −4 max HP', w: 3, rarity: 'rare', cls: 'mage' },
   b_blaze:    { name: 'Closer Flame',    desc: 'firebolt full power to 5 tiles — but costs +1 mana', w: 2, rarity: 'rare', cls: 'mage' },
   // ability modifiers — gifts that change what your buttons DO
-  b_breaker:  { name: 'Charge Breaker',  desc: 'Shield Charge leaves its target reeling — it loses its next turn', w: 2, rarity: 'rare', cls: 'warrior' },
-  b_juggern:  { name: 'Juggernaut',      desc: 'Shield Charge reaches 6 tiles', w: 3, rarity: 'common', cls: 'warrior' },
-  b_fade:     { name: 'Vanishing Strike', desc: 'after Shadow Dash, foes within 2 tiles lose you for a beat — they stir', w: 2, rarity: 'rare', cls: 'rogue' },
-  b_rhythm:   { name: 'Hunter\'s Rhythm', desc: 'backstab KILLS refund 6 turns of Shadow Dash', w: 3, rarity: 'common', cls: 'rogue' },
-  b_fork:     { name: 'Forked Flame',    desc: 'when your firebolt kills, it leaps to the nearest foe in sight at half power', w: 2, rarity: 'rare', cls: 'mage' },
-  b_frost:    { name: 'Deep Freeze',     desc: 'Frost Nova holds foes 5 turns, and the frozen take +2 from your blade', w: 3, rarity: 'common', cls: 'mage' },
+  b_breaker:  { name: 'Charge Breaker',  desc: 'Shield Charge leaves its target reeling — it loses its next turn', w: 3, rarity: 'rare', cls: 'warrior', once: true },
+  b_juggern:  { name: 'Juggernaut',      desc: 'Shield Charge reaches 6 tiles', w: 3, rarity: 'common', cls: 'warrior', once: true },
+  b_fade:     { name: 'Vanishing Strike', desc: 'after Shadow Dash, foes within 2 tiles lose you for a beat — they stir', w: 3, rarity: 'rare', cls: 'rogue', once: true },
+  b_rhythm:   { name: 'Hunter\'s Rhythm', desc: 'backstab KILLS refund 6 turns of Shadow Dash', w: 3, rarity: 'common', cls: 'rogue', once: true },
+  b_fork:     { name: 'Forked Flame',    desc: 'when your firebolt kills, it leaps to the nearest foe in sight at half power', w: 3, rarity: 'rare', cls: 'mage', once: true },
+  b_frost:    { name: 'Deep Freeze',     desc: 'Frost Nova holds foes 5 turns, and the frozen take +2 from your blade', w: 3, rarity: 'common', cls: 'mage', once: true },
 };
 
 function boonPool() {
+  // rarity must MEAN something: raw weights had rares drawing ~70% of all
+  // cards (harness audit, widget ad254c3e). Commons carry the draft now.
+  const RARITY_W = { common: 4, rare: 1, legendary: 1.5 }; // legendary ≈ 2.5% of draws — rare, not mythical
   return Object.entries(BOONS)
-    .filter(([id, b]) => (!b.cls || b.cls === G.classId) && !(G.player.boons[id] && b.rarity !== 'common'))
-    .map(([id, b]) => [id, b.w]);
+    .filter(([id, b]) => (!b.cls || b.cls === G.classId) && !(G.player.boons[id] && (b.rarity !== 'common' || b.once)))
+    .map(([id, b]) => [id, b.w * (RARITY_W[b.rarity] || 1)]);
 }
 
 /* ---------- the Sanctum: permanent unlocks bought with soul embers ---------- */

@@ -16,6 +16,19 @@ const ctx = canvas.getContext('2d');
 
 const FX = { particles: [], floaters: [], shake: 0, hurtT: 0, hover: null, fadeT: 0, fadeText: '', boltGhosts: [] };
 
+/* camera: the map no longer has to fit the screen — zoom in, follow the
+   player, let the minimap carry wayfinding (user feedback 2026-06-11) */
+const CAM = { zoom: 1.5, x: 0, y: 0, snap: true };
+try { CAM.zoom = +(localStorage.getItem('arcaneZoom') || 1.5) || 1.5; } catch (e) { /* ignore */ }
+function cycleZoom() {
+  const levels = [1, 1.5, 2];
+  CAM.zoom = levels[(levels.indexOf(CAM.zoom) + 1) % levels.length];
+  CAM.snap = true;
+  try { localStorage.setItem('arcaneZoom', String(CAM.zoom)); } catch (e) { /* ignore */ }
+  return CAM.zoom;
+}
+function camView() { return { vw: VIEW_W / CAM.zoom, vh: VIEW_H / CAM.zoom }; }
+
 /* deterministic per-tile hash for texture variation */
 function tileHash(x, y) {
   let h = (x * 374761393 + y * 668265263) | 0;
@@ -25,10 +38,9 @@ function tileHash(x, y) {
 
 function canvasToTile(ev) {
   const r = canvas.getBoundingClientRect();
-  return {
-    x: Math.floor((ev.clientX - r.left) / r.width * MAP_W),
-    y: Math.floor((ev.clientY - r.top) / r.height * MAP_H),
-  };
+  const wx = (ev.clientX - r.left) / r.width * (VIEW_W / CAM.zoom) + CAM.x;
+  const wy = (ev.clientY - r.top) / r.height * (VIEW_H / CAM.zoom) + CAM.y;
+  return { x: Math.floor(wx / CELL), y: Math.floor(wy / CELL) };
 }
 
 /* ---------- fx spawners ---------- */
@@ -210,6 +222,20 @@ function draw(t) {
   if (typeof G === 'undefined' || !G.map) { ctx.restore(); return; }
   const map = G.map, p = G.player;
   const dt60 = G._dt || 1 / 60;
+
+  // ---- camera: center the player, clamp to the map, glide between moves ----
+  {
+    const { vw, vh } = camView();
+    const tx2 = clamp((p.rx + 0.5) * CELL - vw / 2, 0, Math.max(0, VIEW_W - vw));
+    const ty2 = clamp((p.ry + 0.5) * CELL - vh / 2, 0, Math.max(0, VIEW_H - vh));
+    if (CAM.snap) { CAM.x = tx2; CAM.y = ty2; CAM.snap = false; }
+    else {
+      CAM.x += (tx2 - CAM.x) * Math.min(1, dt60 * 7);
+      CAM.y += (ty2 - CAM.y) * Math.min(1, dt60 * 7);
+    }
+    ctx.scale(CAM.zoom, CAM.zoom);
+    ctx.translate(-CAM.x, -CAM.y);
+  }
   ctx.font = GLYPH_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -292,7 +318,10 @@ function draw(t) {
           ctx.fillStyle = g;
           ctx.fillRect(px, py, CELL, CELL);
           const sps = spriteFor('prop_stairs');
-          if (sps) drawSprite(sps, px + CELL / 2, py + CELL - 1, CELL * 0.95, { alpha: clamp(b * pulse + 0.3, 0.4, 1) });
+          // a full-bleed TILE at full alpha — alpha-dimming was washing out
+          // three generations of stair art (user feedback round 4). Round 5:
+          // treads descend top-to-bottom into the glow, NO '>' overlay.
+          if (sps) ctx.drawImage(sps, px, py, CELL, CELL);
           else {
             ctx.fillStyle = shade('#7ee0a3', b * pulse + 0.3);
             ctx.fillText('>', px + CELL / 2, py + CELL / 2 + 1);
@@ -305,7 +334,7 @@ function draw(t) {
           ctx.fillStyle = g;
           ctx.fillRect(px, py, CELL, CELL);
           const spd = spriteFor('prop_darkstairs');
-          if (spd) drawSprite(spd, px + CELL / 2, py + CELL - 1, CELL * 0.95, { alpha: clamp(b * pulse + 0.3, 0.4, 1) });
+          if (spd) ctx.drawImage(spd, px, py, CELL, CELL);
           else {
             ctx.fillStyle = shade('#e35d6a', b * pulse + 0.3);
             ctx.fillText('>', px + CELL / 2, py + CELL / 2 + 1);
@@ -798,8 +827,9 @@ function draw(t) {
       if (label) {
         ctx.font = 'bold 11px Consolas, monospace';
         const w = Math.max(ctx.measureText(label).width, sub ? ctx.measureText(sub).width : 0) + 12;
-        const bx = clamp(hx * CELL + CELL / 2 - w / 2, 2, VIEW_W - w - 2);
-        let by = clamp(hy * CELL - (sub ? 32 : 20), 2, VIEW_H - 40);
+        const { vw: nvw, vh: nvh } = camView();
+        const bx = clamp(hx * CELL + CELL / 2 - w / 2, CAM.x + 2, CAM.x + nvw - w - 2);
+        let by = clamp(hy * CELL - (sub ? 32 : 20), CAM.y + 2, CAM.y + nvh - 40);
         // never park the nameplate over a visible monster — an approaching foe
         // hidden behind a price tag reads as 'attacked from nowhere'
         const covers = (yy) => G.monsters.some(mm => G.visible.has(mm.x + ',' + mm.y)
@@ -826,23 +856,26 @@ function draw(t) {
     ctx.font = `bold ${f.size || 13}px Consolas, monospace`;
     ctx.globalAlpha = clamp(f.life, 0, 1);
     ctx.fillStyle = '#000';
-    ctx.fillText(f.text, f.x + 1, f.y + 1);
+    const fx2 = f.banner ? CAM.x + (VIEW_W / CAM.zoom) / 2 : f.x;
+    const fy2 = f.banner ? CAM.y + (VIEW_H / CAM.zoom) / 3 + (f.y - VIEW_H / 3) : f.y;
+    ctx.fillText(f.text, fx2 + 1, fy2 + 1);
     ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x, f.y);
+    ctx.fillText(f.text, fx2, fy2);
   }
   ctx.globalAlpha = 1;
   ctx.font = GLYPH_FONT;
 
   // ---- descent fade + floor card ----
   if (FX.fadeT > 0) {
+    const { vw, vh } = camView();
     ctx.globalAlpha = clamp(FX.fadeT, 0, 1);
     ctx.fillStyle = '#05050a';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillRect(CAM.x, CAM.y, vw, vh);
     if (FX.fadeT > 0.15) {
       ctx.font = '28px Consolas, monospace';
       ctx.fillStyle = '#ffd75e';
       ctx.globalAlpha = clamp(FX.fadeT * 1.4, 0, 1);
-      ctx.fillText(FX.fadeText, VIEW_W / 2, VIEW_H / 2);
+      ctx.fillText(FX.fadeText, CAM.x + vw / 2, CAM.y + vh / 2);
       ctx.font = GLYPH_FONT;
     }
     ctx.globalAlpha = 1;
