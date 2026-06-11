@@ -2914,6 +2914,7 @@ canvas.addEventListener('mousemove', ev => { FX.hover = canvasToTile(ev); });
 canvas.addEventListener('mouseleave', () => { FX.hover = null; });
 canvas.addEventListener('click', ev => {
   if (G.state !== 'PLAY') return;
+  if (joySuppressClick) return; // a joystick drag just ended — not a tap
   Sfx.ensure(); Music.start();
   let { x, y } = canvasToTile(ev);
   // sub-tile precision: a tap on the OUTER band of your own tile means the
@@ -3189,6 +3190,12 @@ window.addEventListener('keydown', ev => {
     else if (G.classId === 'rogue') castShadowDash();
     else castSpell(0);
   });
+  wireTb('tb-potion', () => {
+    if (G.state !== 'PLAY') return;
+    const i = G.player.inventory.findIndex(e => ITEMS[e.id] && ITEMS[e.id].kind === 'potion');
+    if (i === -1) { addMsg('No potions left. The dark notices.', 'm-dim'); return; }
+    useItem(i);
+  });
   wireTb('tb-help', () => toggleHelp());
   // label the ability buttons for the chosen class once a run starts
   const relabel = () => {
@@ -3200,6 +3207,73 @@ window.addEventListener('keydown', ev => {
     else if (G.classId === 'mage') { a.textContent = 'blink'; b.textContent = 'bolt'; }
   };
   setInterval(relabel, 1500);
+})();
+
+/* ---------- virtual joystick (widget ee54a145: 'joystick and buttons are a must')
+   Modern dynamic stick: touch anywhere on the canvas and a joystick spawns
+   under the thumb. Drag past the deadzone to step in that 8-way direction;
+   HOLD to keep walking. A plain tap (no drag) still falls through to the
+   existing tap-to-move/attack handler. Movement reuses the keyboard
+   dispatch so every input guard (overlays, widget-typing) applies. */
+let joySuppressClick = false;
+(() => {
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  if (!coarse) return;
+  const base = $('joy-base'), knob = $('joy-knob'), holder = $('canvas-holder');
+  if (!base || !knob || !holder) return;
+  const DEAD = 16, RANGE = 40, REPEAT_MS = 210;
+  const KEYS = { '1,0': 'ArrowRight', '-1,0': 'ArrowLeft', '0,1': 'ArrowDown', '0,-1': 'ArrowUp',
+                 '-1,-1': 'q', '1,-1': 'e', '-1,1': 'z', '1,1': 'c' };
+  let touchId = null, ox = 0, oy = 0, dirKey = null, timer = null, dragged = false;
+
+  const step = () => { if (dirKey && G.state === 'PLAY') window.dispatchEvent(new KeyboardEvent('keydown', { key: dirKey })); };
+  const setVector = (tx, ty) => {
+    const dx = tx - ox, dy = ty - oy;
+    const mag = Math.hypot(dx, dy);
+    const kx = mag > RANGE ? dx / mag * RANGE : dx, ky = mag > RANGE ? dy / mag * RANGE : dy;
+    knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+    if (mag < DEAD) { dirKey = null; return; }
+    dragged = true;
+    // snap the drag angle to the nearest of 8 octants
+    const oct = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8;
+    const sx = [1, 1, 0, -1, -1, -1, 0, 1][oct];
+    const sy = [0, 1, 1, 1, 0, -1, -1, -1][oct];
+    const wasNull = dirKey === null;
+    dirKey = KEYS[`${sx},${sy}`];
+    if (wasNull && dirKey) { step(); clearInterval(timer); timer = setInterval(step, REPEAT_MS); }
+  };
+  const end = () => {
+    touchId = null; dirKey = null; clearInterval(timer); timer = null;
+    base.classList.add('hidden');
+    knob.style.transform = 'translate(-50%, -50%)';
+    if (dragged) { joySuppressClick = true; setTimeout(() => { joySuppressClick = false; }, 400); }
+    dragged = false;
+  };
+
+  canvas.addEventListener('touchstart', ev => {
+    if (G.state !== 'PLAY' || touchId !== null) return;
+    const t = ev.changedTouches[0];
+    touchId = t.identifier;
+    const hr = holder.getBoundingClientRect();
+    ox = t.clientX; oy = t.clientY;
+    base.style.left = (t.clientX - hr.left) + 'px';
+    base.style.top = (t.clientY - hr.top) + 'px';
+    base.classList.remove('hidden');
+    dragged = false;
+    Sfx.ensure(); Music.start();
+  }, { passive: true });
+  canvas.addEventListener('touchmove', ev => {
+    for (const t of ev.changedTouches) {
+      if (t.identifier !== touchId) continue;
+      setVector(t.clientX, t.clientY);
+      if (dragged) ev.preventDefault(); // dragging the stick must not scroll the page
+    }
+  }, { passive: false });
+  for (const evName of ['touchend', 'touchcancel']) {
+    canvas.addEventListener(evName, ev => {
+      for (const t of ev.changedTouches) if (t.identifier === touchId) end();
+    });
+  }
 })();
 
 // title boot: the daily line carries today's date from the first paint

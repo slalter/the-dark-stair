@@ -6,26 +6,26 @@
 <meta name="robots" content="index, follow">
 <title>The Dark Stair — Free Browser Roguelike Dungeon Crawler</title>
 <meta name="description" content="The Dark Stair is a free browser roguelike: descend six floors of a procedurally generated dungeon as warrior, rogue, or mage and face the Lich. No download, no signup — play instantly. Daily challenge included.">
-<link rel="canonical" href="https://www.gurucloudai.com/dark-stair-demo/">
+<link rel="canonical" href="https://thedarkstair.com/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="GuruCloudAI">
 <meta property="og:title" content="The Dark Stair — Free Browser Roguelike">
 <meta property="og:description" content="Descend six floors of procedurally generated dungeon and face the Lich. Warrior, rogue, or mage — play free in your browser, no download or signup.">
-<meta property="og:url" content="https://www.gurucloudai.com/dark-stair-demo/">
-<meta property="og:image" content="https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg">
+<meta property="og:url" content="https://thedarkstair.com/">
+<meta property="og:image" content="https://thedarkstair.com/title-bg.jpg">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="853">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="The Dark Stair — Free Browser Roguelike">
 <meta name="twitter:description" content="Descend six floors of procedurally generated dungeon and face the Lich. Play free in your browser — no download, no signup.">
-<meta name="twitter:image" content="https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg">
+<meta name="twitter:image" content="https://thedarkstair.com/title-bg.jpg">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "VideoGame",
   "name": "The Dark Stair",
-  "url": "https://www.gurucloudai.com/dark-stair-demo/",
-  "image": "https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg",
+  "url": "https://thedarkstair.com/",
+  "image": "https://thedarkstair.com/title-bg.jpg",
   "description": "A free browser roguelike dungeon crawler. Descend six procedurally generated floors as warrior, rogue, or mage, collect boons and gear, and face the Lich. Includes three difficulties and a seeded daily challenge.",
   "genre": ["Roguelike", "Dungeon crawler"],
   "playMode": "SinglePlayer",
@@ -46,6 +46,8 @@
       <canvas id="canvas"></canvas>
       <div id="vignette"></div>
       <div id="hurt-flash"></div>
+      <!-- dynamic virtual joystick: appears under the left thumb (touch only) -->
+      <div id="joy-base" class="hidden"><div id="joy-knob"></div></div>
 
       <div id="title-screen" class="overlay">
         <canvas id="title-fx"></canvas>
@@ -165,6 +167,7 @@
       <button id="tb-descend">descend</button>
       <button id="tb-ability">ability</button>
       <button id="tb-ability2">charge</button>
+      <button id="tb-potion">potion</button>
       <button id="tb-help">?</button>
     </div>
     <div id="log"></div>

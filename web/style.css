@@ -388,10 +388,27 @@ kbd {
 #touch-bar.hidden { display: none; }
 #touch-bar button {
   background: #16162a; color: var(--text); border: 1px solid var(--panel-border);
-  border-radius: 8px; padding: 10px 14px; font: bold 13px Consolas, monospace;
-  min-width: 64px; touch-action: manipulation;
+  border-radius: 10px; padding: 14px 16px; font: bold 14px Consolas, monospace;
+  min-width: 72px; min-height: 48px; touch-action: manipulation;
 }
 #touch-bar button:active { background: #262648; }
+
+/* ---------- virtual joystick (dynamic: spawns under the left thumb) ---------- */
+#joy-base {
+  position: absolute; width: 104px; height: 104px; border-radius: 50%;
+  background: rgba(110, 116, 150, 0.14);
+  border: 1px solid rgba(174, 245, 200, 0.28);
+  z-index: 30; pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+#joy-base.hidden { display: none; }
+#joy-knob {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px;
+  border-radius: 50%;
+  background: rgba(174, 245, 200, 0.30);
+  border: 1px solid rgba(174, 245, 200, 0.55);
+  transform: translate(-50%, -50%);
+}
 
 /* ---------- small screens: stack, scale, breathe ---------- */
 @media (max-width: 760px) {
