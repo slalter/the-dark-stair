@@ -18,7 +18,7 @@ function makeCtxStub() {
   const grad = { addColorStop() {} };
   return {
     save() {}, restore() {}, fillRect() {}, strokeRect() {}, clearRect() {},
-    fillText() {}, translate() {}, scale() {}, beginPath() {}, arc() {}, fill() {},
+    fillText() {}, translate() {}, scale() {}, setTransform() {}, beginPath() {}, arc() {}, fill() {},
     stroke() {}, ellipse() {}, drawImage() {}, setLineDash() {},
     createRadialGradient() { return grad; }, createLinearGradient() { return grad; },
     measureText() { return { width: 10 }; },

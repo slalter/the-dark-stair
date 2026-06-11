@@ -1,18 +1,33 @@
 'use strict';
 
 const CELL = 20;
-const VIEW_W = MAP_W * CELL, VIEW_H = MAP_H * CELL;
+// WORLD = the dungeon in pixels (fixed). VIEW = the canvas (fixed on desktop,
+// viewport-matched on phones so the game IS the screen — user feedback).
+const WORLD_W = MAP_W * CELL, WORLD_H = MAP_H * CELL;
+let VIEW_W = WORLD_W, VIEW_H = WORLD_H;
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-{
+const MOBILE_UI = typeof window !== 'undefined' && window.matchMedia
+  && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 760);
+function sizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
+  if (MOBILE_UI) {
+    // full-bleed: the canvas wears the whole viewport; CSS pins it there
+    VIEW_W = Math.max(200, window.innerWidth);
+    VIEW_H = Math.max(200, window.innerHeight);
+    canvas.style.width = '100vw';
+    canvas.style.height = '100dvh';
+  } else {
+    canvas.style.width = VIEW_W + 'px';
+    canvas.style.height = VIEW_H + 'px';
+  }
   canvas.width = VIEW_W * dpr;
   canvas.height = VIEW_H * dpr;
-  canvas.style.width = VIEW_W + 'px';
-  canvas.style.height = VIEW_H + 'px';
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CAM.snap = true;
 }
+// sizeCanvas() is first called below, after CAM exists (const TDZ)
 
 const FX = { particles: [], floaters: [], shake: 0, hurtT: 0, hover: null, fadeT: 0, fadeText: '', boltGhosts: [] };
 
@@ -28,6 +43,8 @@ function cycleZoom() {
   return CAM.zoom;
 }
 function camView() { return { vw: VIEW_W / CAM.zoom, vh: VIEW_H / CAM.zoom }; }
+sizeCanvas();
+if (MOBILE_UI) window.addEventListener('resize', sizeCanvas);
 
 /* deterministic per-tile hash for texture variation */
 function tileHash(x, y) {
@@ -226,8 +243,8 @@ function draw(t) {
   // ---- camera: center the player, clamp to the map, glide between moves ----
   {
     const { vw, vh } = camView();
-    const tx2 = clamp((p.rx + 0.5) * CELL - vw / 2, 0, Math.max(0, VIEW_W - vw));
-    const ty2 = clamp((p.ry + 0.5) * CELL - vh / 2, 0, Math.max(0, VIEW_H - vh));
+    const tx2 = clamp((p.rx + 0.5) * CELL - vw / 2, 0, Math.max(0, WORLD_W - vw));
+    const ty2 = clamp((p.ry + 0.5) * CELL - vh / 2, 0, Math.max(0, WORLD_H - vh));
     if (CAM.snap) { CAM.x = tx2; CAM.y = ty2; CAM.snap = false; }
     else {
       CAM.x += (tx2 - CAM.x) * Math.min(1, dt60 * 7);
@@ -836,7 +853,7 @@ function draw(t) {
           && mm.x * CELL + CELL > bx && mm.x * CELL < bx + w
           && mm.y * CELL + CELL > yy && mm.y * CELL < yy + (sub ? 28 : 16));
         if (covers(by)) {
-          const below = clamp(hy * CELL + CELL + 4, 2, VIEW_H - 40);
+          const below = clamp(hy * CELL + CELL + 4, 2, WORLD_H - 40);
           if (!covers(below)) by = below;
         }
         ctx.fillStyle = 'rgba(8,8,16,.78)';

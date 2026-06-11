@@ -3018,8 +3018,10 @@ canvas.addEventListener('click', ev => {
   // were resolving to 'wait' mid-combat
   {
     const rct = canvas.getBoundingClientRect();
-    const fx2 = (ev.clientX - rct.left) / rct.width * MAP_W;
-    const fy2 = (ev.clientY - rct.top) / rct.height * MAP_H;
+    // map through the CAMERA, not the whole map — the pre-zoom version put
+    // the band in the wrong place whenever the camera was panned off origin
+    const fx2 = ((ev.clientX - rct.left) / rct.width * (VIEW_W / CAM.zoom) + CAM.x) / CELL;
+    const fy2 = ((ev.clientY - rct.top) / rct.height * (VIEW_H / CAM.zoom) + CAM.y) / CELL;
     const p0 = G.player;
     if (x === p0.x && y === p0.y) {
       const ox = fx2 - (p0.x + 0.5), oy = fy2 - (p0.y + 0.5);
@@ -3374,6 +3376,102 @@ let joySuppressClick = false;
       for (const t of ev.changedTouches) if (t.identifier === touchId) end();
     });
   }
+})();
+
+/* ---------- mobile HUD: the game is the screen, the UI floats on it ----------
+   (user feedback 2026-06-11: 'I want the whole ui to be the gameplay screen
+   with seamless and minimal margins where the buttons can live') */
+(() => {
+  if (typeof MOBILE_UI === 'undefined' || !MOBILE_UI) return;
+  document.body.classList.add('mobile-ui');
+  const hud = document.createElement('div');
+  hud.id = 'mhud';
+  hud.innerHTML =
+    '<div class="hud-top">' +
+      '<div class="hud-bars">' +
+        '<div class="hud-bar hud-hp"><div id="mh-hp"></div></div>' +
+        '<div class="hud-bar hud-mana" id="mh-mana-wrap"><div id="mh-mana"></div></div>' +
+      '</div>' +
+      '<div class="hud-chips" id="mh-chips"></div>' +
+    '</div>' +
+    '<div class="cluster-left">' +
+      '<button class="mbtn small" id="mb-bag" title="pack &amp; map">\u2630</button>' +
+      '<button class="mbtn small" id="mb-explore" title="auto-explore">\u25ce</button>' +
+      '<button class="mbtn small" id="mb-wait" title="wait">\u00b7</button>' +
+      '<button class="mbtn small" id="mb-descend" title="descend">\u25bc</button>' +
+    '</div>' +
+    '<div class="cluster-right" id="mh-abilities"></div>';
+  document.body.appendChild(hud);
+
+  const tap = (id, fn) => { const b = hud.querySelector('#' + id); if (b) b.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); fn(); }); };
+  tap('mb-bag', () => document.body.classList.toggle('drawer-open'));
+  tap('mb-explore', () => autoExplore());
+  tap('mb-wait', () => { if (G.state !== 'PLAY') return; addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); });
+  tap('mb-descend', () => { if (G.state !== 'PLAY') return; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); });
+
+  // the log rolls and burns away; a tap opens the full scroll
+  const logEl = $('log');
+  if (logEl) logEl.addEventListener('click', () => logEl.classList.toggle('expanded'));
+
+  // ability cluster: little sprite-buttons with cooldown/cost/count badges
+  const mkBtn = (glyph, title, fn) => {
+    const b = document.createElement('button');
+    b.className = 'mbtn';
+    b.innerHTML = glyph + '<span class="badge" style="display:none"></span>';
+    b.title = title;
+    b.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); fn(); });
+    return b;
+  };
+  const SPELL_GLYPHS = ['\u2726', '\u2745', '\u271a', '\u2737']; // bolt, nova, mend, blink
+  let builtFor = null;
+  const buttons = [];
+  const rebuild = () => {
+    const box = hud.querySelector('#mh-abilities');
+    box.innerHTML = ''; buttons.length = 0;
+    const add = (glyph, title, fn, badgeOf) => { const b = mkBtn(glyph, title, fn); buttons.push({ b, badgeOf }); box.appendChild(b); };
+    if (G.classId === 'mage') {
+      SPELLS.forEach((sp, i) => add(SPELL_GLYPHS[i], sp.name, () => castSpell(i),
+        p => (p.mana < sp.cost ? { txt: sp.cost + '\u25c6', cant: true } : { txt: sp.cost + '\u25c6' })));
+    } else if (G.classId === 'warrior') {
+      add('\u2694', 'Cleave', () => castCleave(), p => p.cleaveCd > 0 ? { txt: p.cleaveCd, cant: true } : null);
+      add('\u00bb', 'Shield Charge', () => castCharge(), p => p.chargeCd > 0 ? { txt: p.chargeCd, cant: true } : null);
+      add('\u26e8', 'Bulwark', () => castBulwark(), p => p.guardCd > 0 ? { txt: p.guardCd, cant: true } : null);
+    } else if (G.classId === 'rogue') {
+      add('\u00bb', 'Shadow Dash', () => castShadowDash(), p => p.dashCd > 0 ? { txt: p.dashCd, cant: true } : null);
+      add('\u2934', 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null);
+    }
+    add('!', 'drink a potion', () => {
+      if (G.state !== 'PLAY') return;
+      const i = G.player.inventory.findIndex(e => ITEMS[e.id] && ITEMS[e.id].kind === 'potion');
+      if (i === -1) { addMsg('No potions left. The dark notices.', 'm-dim'); return; }
+      useItem(i);
+    }, p => {
+      const n = p.inventory.reduce((s, e) => s + (ITEMS[e.id] && ITEMS[e.id].kind === 'potion' ? (e.count || 1) : 0), 0);
+      return n ? { txt: 'x' + n } : { txt: 'x0', cant: true };
+    });
+    builtFor = G.classId;
+  };
+  const refresh = () => {
+    const p = G.player;
+    const inRun = p && (G.state === 'PLAY' || G.state === 'BOON');
+    hud.style.display = inRun ? 'block' : 'none';
+    if (!inRun) return;
+    if (builtFor !== G.classId) rebuild();
+    $('mh-hp').style.width = (100 * p.hp / p.maxHp) + '%';
+    const mw = hud.querySelector('#mh-mana-wrap');
+    mw.style.display = p.maxMana > 0 ? '' : 'none';
+    if (p.maxMana > 0) $('mh-mana').style.width = (100 * p.mana / p.maxMana) + '%';
+    $('mh-chips').textContent = `\u25c8 ${G.depth}/${FINAL_DEPTH}  $${p.gold}`;
+    for (const { b, badgeOf } of buttons) {
+      const info = badgeOf ? badgeOf(p) : null;
+      const badge = b.querySelector('.badge');
+      if (info && info.txt != null) { badge.style.display = ''; badge.textContent = info.txt; }
+      else badge.style.display = 'none';
+      b.classList.toggle('cant', !!(info && info.cant));
+    }
+  };
+  setInterval(refresh, 250);
+  refresh();
 })();
 
 // title boot: the daily line carries today's date from the first paint

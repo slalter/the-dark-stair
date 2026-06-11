@@ -439,3 +439,79 @@ kbd {
   #log { width: 100% !important; max-width: 100vw; box-sizing: border-box; }
   .end-stats { max-width: 96vw; }
 }
+
+/* ---------- mobile-ui: the game IS the screen (user feedback 2026-06-11) ----------
+   body.mobile-ui is set by game.js on coarse-pointer/narrow devices. The
+   canvas wears the whole viewport; everything else floats over it. */
+body.mobile-ui { overflow: hidden; }
+body.mobile-ui #wrap { padding: 0; gap: 0; }
+body.mobile-ui #canvas-holder {
+  position: fixed; inset: 0; width: 100vw; height: 100dvh;
+  border: none; border-radius: 0; box-shadow: none; z-index: 5;
+}
+body.mobile-ui #canvas { width: 100vw !important; height: 100dvh !important; }
+body.mobile-ui #touch-bar { display: none !important; }
+body.mobile-ui #sidebar { display: none; }
+body.mobile-ui.drawer-open #sidebar {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  position: fixed; left: 0; right: 0; bottom: 0; max-height: 72dvh;
+  overflow-y: auto; z-index: 40; margin: 0; padding: 10px 10px 16px;
+  background: rgba(10, 10, 18, 0.96); border-top: 1px solid var(--panel-border);
+}
+
+/* the log rolls by at the bottom and burns away; a tap opens the scroll */
+body.mobile-ui #log {
+  position: fixed; left: 0; right: 70px; bottom: 0; z-index: 30;
+  max-height: 5.4em; overflow: hidden; margin: 0; padding: 4px 8px 6px;
+  background: transparent; border: none; pointer-events: auto;
+}
+body.mobile-ui #log div {
+  animation: mlogfade 5s ease-out forwards;
+  text-shadow: 0 1px 3px #000, 0 0 8px rgba(0,0,0,.8);
+}
+body.mobile-ui #log.expanded {
+  max-height: 55dvh; overflow-y: auto; right: 0; z-index: 45;
+  background: rgba(10, 10, 18, 0.95); border-top: 1px solid var(--panel-border);
+}
+body.mobile-ui #log.expanded div { animation: none; opacity: 1; }
+@keyframes mlogfade { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+
+/* floating HUD: sprite-ish round buttons with count badges */
+#mhud { display: none; }
+body.mobile-ui #mhud {
+  display: block; position: fixed; inset: 0; z-index: 20; pointer-events: none;
+}
+#mhud .mbtn {
+  pointer-events: auto; position: relative;
+  width: 54px; height: 54px; border-radius: 50%;
+  background: rgba(20, 20, 40, 0.78); border: 1px solid var(--panel-border);
+  color: var(--text); font: bold 22px Consolas, monospace;
+  touch-action: manipulation; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+#mhud .mbtn.small { width: 44px; height: 44px; font-size: 17px; }
+#mhud .mbtn:active { background: rgba(38, 38, 72, 0.9); }
+#mhud .mbtn.cant { opacity: 0.38; }
+#mhud .mbtn .badge {
+  position: absolute; right: -3px; top: -3px; min-width: 19px; height: 19px;
+  border-radius: 10px; background: #20203c; border: 1px solid var(--panel-border);
+  font: bold 11px Consolas, monospace; line-height: 17px; color: var(--gold);
+  padding: 0 4px;
+}
+#mhud .cluster-right {
+  position: absolute; right: 10px; bottom: 96px;
+  display: flex; flex-direction: column; gap: 12px; align-items: center;
+}
+#mhud .cluster-left {
+  position: absolute; left: 10px; bottom: 96px;
+  display: flex; flex-direction: column; gap: 12px; align-items: center;
+}
+#mhud .hud-top {
+  position: absolute; top: 6px; left: 10px; right: 10px;
+  display: flex; align-items: center; gap: 10px; pointer-events: none;
+}
+#mhud .hud-bars { flex: 1; max-width: 46vw; }
+#mhud .hud-bar { height: 9px; border-radius: 5px; background: #1a1a2e; overflow: hidden; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.08); }
+#mhud .hud-bar > div { height: 100%; transition: width .2s; }
+#mhud .hud-hp > div { background: linear-gradient(90deg, #b33a4a, #e35d6a); }
+#mhud .hud-mana > div { background: linear-gradient(90deg, #3a5ab3, #9ecbff); }
+#mhud .hud-chips { font: bold 12px Consolas, monospace; color: var(--text); text-shadow: 0 1px 3px #000; white-space: nowrap; }
