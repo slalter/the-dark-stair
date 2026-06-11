@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -173,6 +173,60 @@ const TESTS = {
   },
   b_fleet(p) { const d0 = g.playerDodge(); g.applyBoon('b_fleet'); return g.playerDodge() > d0 + 0.1 && g.dreadShift() >= 40; },
   b_ghost(p) { const d0 = g.playerDodge(); g.applyBoon('b_ghost'); return g.playerDodge() > d0 + 0.05; },
+  b_thrift(p) {
+    g.applyBoon('b_thrift');
+    return g.spellCost(0) === 4 && g.spellCost(1) === 7 && g.spellCost(3) === 3;
+  },
+  b_overchannel(p) {
+    g.applyBoon('b_overchannel');
+    return g.spellCost(0) === 6 && String(g.castSpell).includes("hasBoon('b_overchannel') ? 4 : 0");
+  },
+  // NOTE for both stagger boons: skipT is set during the cast and then
+  // CONSUMED by the same cast's afterPlayerTurn (the staggered foe skips
+  // immediately), so the test observes the skip's EFFECT: the adjacent foe
+  // got no attack in — plus a source assertion à la b_blaze.
+  b_stonewall(p) {
+    g.applyBoon('b_stonewall');
+    const s = adjSpot(p); const m = g.spawnMonster('orc', s[0], s[1]); m.awake = true;
+    p.hp = p.maxHp; p.dodge = -9; // any swing would land
+    g.castBulwark(); // stagger eats the orc's reply; bulwark would cap a hit at 1
+    const untouched = p.hp === p.maxHp;
+    G.monsters.length = 0;
+    return untouched && String(g.castBulwark).includes("hasBoon('b_stonewall')");
+  },
+  b_aftershock(p) {
+    g.applyBoon('b_aftershock');
+    const s = adjSpot(p); const m = g.spawnMonster('golem', s[0], s[1]); m.awake = true; m.hp = 999;
+    p.hp = p.maxHp; p.dodge = -9; p.braced = true; // no passive block confound
+    g.castCleave(); // survivor is staggered: its reply this turn is skipped
+    const hit = m.hp < 999;
+    const untouched = p.hp === p.maxHp;
+    G.monsters.length = 0;
+    return hit && untouched && String(g.castCleave).includes("hasBoon('b_aftershock')");
+  },
+  b_slipvault(p) {
+    g.applyBoon('b_slipvault');
+    const spot = laneSpot(p, 2);
+    if (!spot) return 'no clear lane on this map seed';
+    const dx = Math.sign(spot[0] - p.x), dy = Math.sign(spot[1] - p.y);
+    g.spawnMonster('rat', p.x + dx, p.y + dy);
+    p.dashCd = 9;
+    g.castVault();
+    const ok = p.dashCd === 0;
+    G.monsters.length = 0;
+    return ok;
+  },
+  b_springheel(p) {
+    g.applyBoon('b_springheel');
+    const spot = laneSpot(p, 2);
+    if (!spot) return 'no clear lane on this map seed';
+    const dx = Math.sign(spot[0] - p.x), dy = Math.sign(spot[1] - p.y);
+    g.spawnMonster('rat', p.x + dx, p.y + dy);
+    g.castVault();
+    const ok = p.vaultCd === 4; // 8-3, ticked once by the turn the vault spends
+    G.monsters.length = 0;
+    return ok;
+  },
   b_shadow(p) {
     // x4 backstab vs x3: with crit off, sleeping-rat damage ratio ≈ 4/3
     p.crit = 0;
@@ -406,6 +460,21 @@ console.log('\n=== weapons with souls · rings · actives ===');
   p = fresh('warrior'); p.ring = 'ring_blood'; p.hp = 10;
   { const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1; g.killMonster(m); }
   check('leech ring feeds 1 HP on kill', p.hp === 11, `hp ${p.hp}, want 11`);
+
+  // two ring fingers ('2 rings pls', iter61): both effects live at once
+  p = fresh('warrior');
+  { const a0 = g.playerAtk(), d0 = g.playerDef();
+    p.inventory.length = 0; p.inventory.push({ id: 'ring_might', count: 1 });
+    g.useItem(0);
+    p.inventory.length = 0; p.inventory.push({ id: 'ring_guard', count: 1 });
+    g.useItem(0);
+    check('two rings worn at once', !!p.ring && !!p.ring2, `ring ${p.ring} ring2 ${p.ring2}`);
+    check('both ring effects stack', g.playerAtk() === a0 + 2 && g.playerDef() === d0 + 2,
+      `atk ${g.playerAtk()} (want ${a0 + 2}) def ${g.playerDef()} (want ${d0 + 2})`);
+    p.inventory.length = 0; p.inventory.push({ id: 'ring_swift', count: 1 });
+    g.useItem(0);
+    check('third ring swaps the first finger', p.ring === 'ring_swift' && p.ring2 === 'ring_guard'
+      && p.inventory.some(e => e.id === 'ring_might'), `ring ${p.ring} ring2 ${p.ring2}`); }
 
   // BULWARK (active): every hit turned aside to 1 until next turn, then it lowers
   p = fresh('warrior'); p.hp = p.maxHp; G.monsters.length = 0;

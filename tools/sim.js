@@ -168,8 +168,8 @@ function botTurn(policy, stats) {
   const aB = p.armor ? ITEMS[p.armor].bonus : 0;
   const ai = p.inventory.findIndex(e => ITEMS[e.id].kind === 'armor' && ITEMS[e.id].bonus > aB);
   if (ai >= 0) { useItem(ai); return; }
-  if (!p.ring) {
-    const ri = p.inventory.findIndex(e => ITEMS[e.id].kind === 'ring');
+  if (!p.ring || !p.ring2) {
+    const ri = p.inventory.findIndex(e => ITEMS[e.id].kind === 'ring' && e.id !== p.ring && e.id !== p.ring2);
     if (ri >= 0) { useItem(ri); return; }
   }
   const stackables = p.inventory.findIndex(e => ITEMS[e.id].kind === 'potion' && (e.id === 'potion_vigor' || e.id === 'elixir_str'));

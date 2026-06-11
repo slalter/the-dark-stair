@@ -372,12 +372,20 @@ function newPlayer(cls) {
     gold: 0, poison: 0,
     keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0,
     boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
-    guardT: 0, guardCd: 0, vaultCd: 0, vaultStrike: 0,
+    guardT: 0, guardCd: 0, vaultCd: 0, vaultStrike: 0, ring2: null,
     inventory: [], weapon: null, armor: null, ring: null,
     flashT: 0,
   };
 }
-const ringIs = id => G.player.ring === id;
+// two ring fingers ('2 rings pls' — widget 1ce56615): every effect checks both
+const ringIs = id => G.player.ring === id || G.player.ring2 === id;
+// effective spell cost: mechanic boons bend the book (widget 0d979881)
+function spellCost(i) {
+  let c = SPELLS[i].cost;
+  if (i === 0 && hasBoon('b_overchannel')) c += 1;
+  if (hasBoon('b_thrift')) c = Math.max(2, c - 1);
+  return c;
+}
 // tempest maul: ability cooldowns shed 2 turns while it's in hand
 const tempoEdge = () => (G.player && G.player.weapon && ITEMS[G.player.weapon].trait === 'tempo') ? 2 : 0;
 const dreadShift = () => (hasBoon('b_fleet') ? 40 : 0) + (hasBoon('b_reaper') ? 20 : 0);
@@ -1455,6 +1463,11 @@ function castBulwark() {
   cancelTravel();
   p.guardT = 1;
   p.guardCd = 12 - tempoEdge();
+  if (hasBoon('b_stonewall')) {
+    let shook = 0;
+    for (const m of G.monsters) if (cheb(m.x, m.y, p.x, p.y) <= 1) { m.skipT = Math.max(m.skipT || 0, 1); m.stirring = true; shook++; }
+    if (shook) addMsg('The shield SLAMS down — the ground answer staggers those beside you.', 'm-gold');
+  }
   addMsg('You plant your shield and set your feet. Let them come.', 'm-gold');
   spawnFloater(p.x, p.y, 'BULWARK', '#9ecbff', 13);
   Sfx.equip();
@@ -1486,7 +1499,8 @@ function castVault() {
   spawnBurst(p.x, p.y, '#a8f0c0', 8, 60);
   p.x = best.lx; p.y = best.ly;
   lunge(p, best.m.x, best.m.y, -0.4);
-  p.vaultCd = 8 - tempoEdge();
+  p.vaultCd = Math.max(4, 8 - tempoEdge() - (hasBoon('b_springheel') ? 3 : 0));
+  if (hasBoon('b_slipvault') && p.dashCd > 0) { p.dashCd = 0; addMsg('The vault folds into shadow — Shadow Dash is ready again.', 'm-magic'); }
   // 'land soft behind it' now cashes out: your next strike this turn or the
   // next is a true backstab — Vault is the rogue's sanctioned elite answer
   p.vaultStrike = 2;
@@ -1565,7 +1579,8 @@ function castSpell(i) {
   const p = G.player;
   if (!p.maxMana) { addMsg('You fumble at forces you cannot grasp.', 'm-dim'); return; }
   const sp = SPELLS[i];
-  if (p.mana < sp.cost) { addMsg(`Not enough mana for ${sp.name} (${sp.cost}).`, 'm-dim'); return; }
+  const cost = spellCost(i);
+  if (p.mana < cost) { addMsg(`Not enough mana for ${sp.name} (${cost}).`, 'm-dim'); return; }
 
   if (i === 0) { // Firebolt — a real projectile: 3 tiles per turn, blockable, dodgeable
     let best = null, bd = 1e9;
@@ -1585,7 +1600,7 @@ function castSpell(i) {
     Sfx.firebolt();
     // full power within 3 tiles (5 with Closer Flame), −2 damage per tile beyond
     const fullR = hasBoon('b_blaze') ? 5 : 3;
-    let boltDmg = Math.max(5, 11 - Math.max(0, cheb(best.x, best.y, p.x, p.y) - fullR) * 2) + spellBonus();
+    let boltDmg = Math.max(5, 11 - Math.max(0, cheb(best.x, best.y, p.x, p.y) - fullR) * 2) + spellBonus() + (hasBoon('b_overchannel') ? 4 : 0);
     const sCrit = RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0));
     if (sCrit) boltDmg = Math.round(boltDmg * 1.5);
     spawnProjectile(p.x, p.y, best.x, best.y, {
@@ -1595,7 +1610,7 @@ function castSpell(i) {
     addMsg(sCrit ? 'You loose a firebolt — it SCREAMS down the corridor!' : 'You loose a firebolt down the corridor.', 'm-magic');  } else if (i === 1) { // Frost Nova
     const targets = G.monsters.filter(m => cheb(m.x, m.y, p.x, p.y) <= 2 && G.visible.has(m.x + ',' + m.y));
     if (!targets.length) { addMsg('The cold finds no one to bite.', 'm-dim'); return; }
-    p.mana -= sp.cost;
+    p.mana -= cost;
     Sfx.freeze();
     addShake(3);
     const dmg = 7 + spellBonus();
@@ -1611,7 +1626,7 @@ function castSpell(i) {
     for (const m of targets) if (m.hp <= 0 && G.monsters.includes(m)) killMonster(m);
   } else if (i === 2) { // Mend
     if (p.hp >= p.maxHp) { addMsg('You are already whole.', 'm-dim'); return; }
-    p.mana -= sp.cost;
+    p.mana -= cost;
     const heal = Math.min(p.maxHp - p.hp, 14);
     p.hp += heal;
     Sfx.mend();
@@ -1639,7 +1654,7 @@ function castSpell(i) {
       }
     }
     if (!spot) { addMsg('No clear space to blink to.', 'm-dim'); return; }
-    p.mana -= sp.cost;
+    p.mana -= cost;
     spawnBurst(p.x, p.y, '#9ecbff', 12, 80);
     p.x = spot.x; p.y = spot.y;
     p.rx = p.x; p.ry = p.y;
@@ -1666,6 +1681,11 @@ function castCleave() {
   Sfx.crit();
   addMsg(`Your blade sweeps a full circle — ${targets.length} ${targets.length === 1 ? 'foe reels' : 'foes reel'}!`, 'm-gold');
   for (const m of targets) if (G.monsters.includes(m)) attackMonster(m, 1);
+  if (hasBoon('b_aftershock')) {
+    let staggered = 0;
+    for (const m of targets) if (G.monsters.includes(m) && m.hp > 0) { m.skipT = Math.max(m.skipT || 0, 1); m.stirring = true; staggered++; }
+    if (staggered) addMsg(`The shockwave staggers ${staggered === 1 ? 'the survivor' : staggered + ' survivors'}.`, 'm-gold');
+  }
   afterPlayerTurn();
 }
 
@@ -1731,7 +1751,9 @@ function useItem(index) {
       }
     }
     G.equipAsk = null;
-    const slot = def.kind;
+    let slot = def.kind;
+    // two ring fingers: fill the bare one first; both full = swap the first
+    if (slot === 'ring' && p.ring && !p.ring2) slot = 'ring2';
     const old = p[slot];
     p[slot] = entry.id;
     inv.splice(index, 1);
@@ -2578,7 +2600,11 @@ function updateUI() {
     $('mana-fill').style.width = (100 * p.mana / p.maxMana) + '%';
     SPELLS.forEach((sp, i) => {
       const el = $('spell-' + i);
-      if (el) el.classList.toggle('cant', p.mana < sp.cost);
+      if (el) {
+        el.classList.toggle('cant', p.mana < spellCost(i));
+        const ce = el.querySelector('.cost');
+        if (ce) ce.textContent = spellCost(i) + '\u25c6';
+      }
     });
   } else {
     $('mana-row').style.display = 'none';
@@ -2621,7 +2647,7 @@ function updateUI() {
   Music.setTension(G.state === 'PLAY' && dangerVisible());
   $('weapon-text').textContent = p.weapon ? `${ITEMS[p.weapon].name} (+${ITEMS[p.weapon].bonus})` : 'bare fists';
   $('armor-text').textContent = p.armor ? `${ITEMS[p.armor].name} (+${ITEMS[p.armor].bonus})` : 'tattered rags';
-  $('ring-text').textContent = p.ring ? ITEMS[p.ring].name : 'bare finger';
+  $('ring-text').textContent = [p.ring, p.ring2].filter(Boolean).map(r => ITEMS[r].name).join(' \u00b7 ') || 'bare fingers';
   $('inv-count').textContent = `${p.inventory.length}/10`;
 
   const list = $('inv-list');
@@ -3043,7 +3069,7 @@ function gameStateSnapshot() {
     if (p) {
       snap.hp = p.hp; snap.max_hp = p.maxHp;
       snap.mana = p.mana; snap.gold = p.gold; snap.kills = G.kills;
-      snap.weapon = p.weapon || null; snap.armor = p.armor || null; snap.ring = p.ring || null;
+      snap.weapon = p.weapon || null; snap.armor = p.armor || null; snap.ring = p.ring || null; snap.ring2 = p.ring2 || null;
       snap.boons = Object.keys(p.boons || {});
     }
     const logEl = $('log');
@@ -3170,9 +3196,9 @@ function toggleHelp() {
   const cls = $('help-class-block');
   if (opening && cls) {
     cls.innerHTML = G.classId === 'mage'
-      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
+      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
-      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. Vault [B] leaps you clean OVER an adjacent foe — cornered is a choice now. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
       : G.classId === 'warrior'
       ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. Bulwark [G] plants your shield: until your next turn every hit is turned aside to 1 — spend the turn, soak the storm. You also passively BLOCK part of the first hit each turn (heavier armor, bigger block). You are the wall; make them come through you.'
       : '';
@@ -3591,7 +3617,7 @@ let joySuppressClick = false;
     const add = (glyph, title, fn, badgeOf, desc) => { const b = mkBtn(glyph, title, fn, desc); buttons.push({ b, badgeOf }); box.appendChild(b); };
     if (G.classId === 'mage') {
       SPELLS.forEach((sp, i) => add(SPELL_GLYPHS[i], sp.name, () => castSpell(i),
-        p => (p.mana < sp.cost ? { txt: sp.cost + '\u25c6', cant: true } : { txt: sp.cost + '\u25c6' }), sp.desc));
+        p => (p.mana < spellCost(i) ? { txt: spellCost(i) + '\u25c6', cant: true } : { txt: spellCost(i) + '\u25c6' }), sp.desc));
     } else if (G.classId === 'warrior') {
       add(ABILITY_GLYPHS.cleave, 'Cleave', () => castCleave(), p => p.cleaveCd > 0 ? { txt: p.cleaveCd, cant: true } : null,
         'strike every adjacent foe in one sweep');

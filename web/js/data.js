@@ -86,6 +86,13 @@ const BOONS = {
   b_bulwark:  { name: 'Shield Rhythm',   desc: 'after you Cleave, +3 defense for 4 turns', w: 2, rarity: 'rare', cls: 'warrior' },
   b_shadow:   { name: 'Deeper Shadows',  desc: 'backstabs deal ×4 — but −8% dodge', w: 3, rarity: 'rare', cls: 'rogue' },
   b_ghost:    { name: 'Ghost Step',      desc: '+8% dodge and monsters notice you 1 tile later', w: 2, rarity: 'rare', cls: 'rogue' },
+  // mechanic boons (widget 0d979881): choices that bend ABILITIES, not stats
+  b_thrift:      { name: 'Frugal Weave',   desc: 'all spells cost 1 less mana (minimum 2)', w: 2, rarity: 'rare', cls: 'mage' },
+  b_overchannel: { name: 'Overchannel',    desc: 'firebolt hits +4 harder — but costs 1 more', w: 2, rarity: 'rare', cls: 'mage' },
+  b_stonewall:   { name: 'Stonewall',      desc: 'planting your Bulwark staggers all adjacent foes', w: 2, rarity: 'rare', cls: 'warrior' },
+  b_aftershock:  { name: 'Aftershock',     desc: 'foes that survive your Cleave are staggered a turn', w: 2, rarity: 'rare', cls: 'warrior' },
+  b_slipvault:   { name: 'Slipstream',     desc: 'Vault resets Shadow Dash', w: 2, rarity: 'rare', cls: 'rogue' },
+  b_springheel:  { name: 'Spring-Heel',    desc: 'Vault recovers 3 turns faster', w: 2, rarity: 'rare', cls: 'rogue' },
   b_font:     { name: 'Mana Font',       desc: '+8 max mana, +1 mana on kill — but −4 max HP', w: 3, rarity: 'rare', cls: 'mage' },
   b_blaze:    { name: 'Closer Flame',    desc: 'firebolt full power to 5 tiles — but costs +1 mana', w: 2, rarity: 'rare', cls: 'mage' },
   // ability modifiers — gifts that change what your buttons DO
