@@ -79,8 +79,6 @@ through a real browser, filed structured reports, and every finding shipped
 the same cycle — alongside feedback from real players. The checked-in
 calibration batteries and the telegraph grammar both came out of that loop.
 
-Curious about the engine behind it? **https://www.gurucloudai.com**
-
 ## License
 
 MIT — see [LICENSE](LICENSE). Sprites and voice lines are AI-generated
