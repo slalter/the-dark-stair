@@ -6,14 +6,14 @@ const CLASSES = {
     name: 'Warrior', color: '#ffd75e', glyphColor: '#ffd75e',
     hp: 42, atk: 8, def: 2, crit: 0.08, fov: 8, mana: 0, dodge: 0,
     blurb: 'Heavy hands, heavier patience.',
-    perks: ['42 HP · 8 ATK · 2 DEF', 'blocks: armor dulls the first hit each turn', 'V: Cleave — strike all adjacent'],
+    perks: ['42 HP · 8 ATK · 2 DEF', 'blocks: armor dulls the first hit each turn', 'V Cleave · B Charge · G Bulwark'],
     start: ['w_dagger', 'a_leather', 'potion_heal'],
   },
   rogue: {
     name: 'Rogue', color: '#7ee0a3', glyphColor: '#a8f0c0',
     hp: 38, atk: 7, def: 1, crit: 0.25, fov: 9, mana: 0, dodge: 0.18, sneak: 2, senses: true,
     blurb: 'The dark is a tool. So is a knife.',
-    perks: ['25% crits · 18% evasion', 'senses hidden traps', 'stealthy · +1 sight'],
+    perks: ['25% crits · 18% evasion', 'senses traps · stealthy · +1 sight', 'V Shadow Dash · B Vault'],
     start: ['w_dagger', 'potion_heal', 'scroll_tele'],
   },
   mage: {
@@ -114,6 +114,11 @@ const SANCTUM = {
   s_stone:  { name: 'Whetstone of the First Floor', desc: '+1 starting attack', cost: 40 },
   s_ring:   { name: 'The Lich\'s Bargain', desc: 'begin with a random ring (he insists)', cost: 50 },
   s_fourth: { name: 'Boon of the Deep', desc: 'boon choices offer 4 options instead of 3', cost: 60 },
+  // the tree grows (widget 1c465414): deeper kindlings, each rooted in a first
+  s_flask2: { name: 'Deeper Flask', desc: 'the flask holds a potion of vigor as well', cost: 55, requires: 's_flask' },
+  s_lore:   { name: 'Keeper\'s Lore', desc: 'begin each floor knowing where the stairs lie', cost: 45, requires: 's_map' },
+  s_purse2: { name: 'Estate', desc: 'the inheritance grows to 60 gold', cost: 60, requires: 's_purse' },
+  s_stone2: { name: 'Anvil of the First Floor', desc: '+1 starting defense', cost: 70, requires: 's_stone' },
 };
 
 const ELITE_MODS = {
@@ -168,6 +173,11 @@ const ITEMS = {
   w_sword:      { name: 'steel sword',         glyph: '/', color: '#d8e2f0', kind: 'weapon', bonus: 4, price: () => 35 },
   w_axe:        { name: 'dwarven battleaxe',   glyph: '/', color: '#e8c97a', kind: 'weapon', bonus: 6, price: () => 90 },
   w_rune:       { name: 'runeblade',           glyph: '/', color: '#9ee8ff', kind: 'weapon', bonus: 9, price: () => 75 },
+  // weapons with souls (widget 2777b20b): the trait IS the reason to wield it
+  w_staff:      { name: 'ashwood staff',       glyph: '/', color: '#c9a87a', kind: 'weapon', bonus: 3, trait: 'mana',   effect: '+6 max mana while wielded',        price: () => 45 },
+  w_orb:        { name: 'soulglass orb',       glyph: '/', color: '#b48fe8', kind: 'weapon', bonus: 5, trait: 'siphon', effect: 'kills siphon +1 more mana',        price: () => 80 },
+  w_maul:       { name: 'tempest maul',        glyph: '/', color: '#e8b05e', kind: 'weapon', bonus: 5, trait: 'tempo',  effect: 'abilities return 2 turns sooner',  price: () => 80 },
+  w_fangs:      { name: 'twin fangs',          glyph: '/', color: '#7ee0a3', kind: 'weapon', bonus: 4, trait: 'shadow', effect: 'backstabs bite one tier deeper',   price: () => 70 },
   a_leather:    { name: 'leather armor',       glyph: '[', color: '#b08968', kind: 'armor', bonus: 1, price: () => 20 },
   a_chain:      { name: 'chainmail',           glyph: '[', color: '#b9c2d0', kind: 'armor', bonus: 3, price: () => 32 },
   a_plate:      { name: 'plate armor',         glyph: '[', color: '#d8e2f0', kind: 'armor', bonus: 5, price: () => 85 },
@@ -176,6 +186,8 @@ const ITEMS = {
   ring_might:   { name: 'ring of might',       glyph: '○', color: '#ff8c5e', kind: 'ring', effect: '+2 attack', price: () => 62 },
   ring_guard:   { name: 'ring of warding',     glyph: '○', color: '#9ecbff', kind: 'ring', effect: '+2 defense', price: () => 62 },
   ring_focus:   { name: 'ring of focus',       glyph: '○', color: '#c7a4ff', kind: 'ring', effect: '+1 sight · doubles mana flow', price: () => 58 },
+  ring_swift:   { name: 'ring of the zephyr',  glyph: '○', color: '#a8f0c0', kind: 'ring', effect: '+8% dodge', price: () => 55 },
+  ring_blood:   { name: 'ring of the leech',   glyph: '○', color: '#e35d6a', kind: 'ring', effect: 'kills feed you 1 HP', price: () => 60 },
 };
 
 function itemPoolForDepth(d) {
@@ -189,9 +201,10 @@ function itemPoolForDepth(d) {
   ];
   if (d >= 2) pool.push(['potion_anti', 3]);
   if (d <= 2) pool.push(['w_dagger', 1], ['a_leather', 1]);
-  if (d >= 2 && d <= 4) pool.push(['w_sword', 3], ['a_chain', 3]);
-  if (d >= 3) pool.push(['ring_regen', 1], ['ring_might', 1], ['ring_guard', 1], ['ring_focus', 1]);
-  if (d >= 4) pool.push(['w_axe', 2], ['a_plate', 2]);
+  if (d >= 2 && d <= 4) pool.push(['w_sword', 3], ['a_chain', 3], ['w_staff', 2]);
+  if (d >= 3) pool.push(['ring_regen', 1], ['ring_might', 1], ['ring_guard', 1], ['ring_focus', 1],
+    ['ring_swift', 1], ['ring_blood', 1], ['w_fangs', 2]);
+  if (d >= 4) pool.push(['w_axe', 2], ['a_plate', 2], ['w_maul', 1], ['w_orb', 1]);
   if (d >= 5) pool.push(['w_rune', 1], ['a_dragon', 1]);
   return pool;
 }
@@ -202,9 +215,9 @@ function itemPoolForDepth(d) {
 function shopStockForDepth(d) {
   const consumables = ['potion_heal', 'potion_anti', 'potion_vigor', 'elixir_str'];
   const scrolls = ['scroll_fire', 'scroll_tele', 'scroll_map'];
-  if (d >= 5) return ['potion_heal', RNG.pick(['w_rune', 'a_dragon']), RNG.pick(['ring_might', 'ring_guard', 'ring_focus'])];
-  const gear = d <= 2 ? ['w_sword', 'a_chain', 'ring_regen']
-    : ['ring_might', 'ring_guard', 'ring_focus', 'ring_regen'];
+  if (d >= 5) return ['potion_heal', RNG.pick(['w_rune', 'a_dragon', 'w_orb', 'w_maul']), RNG.pick(['ring_might', 'ring_guard', 'ring_focus', 'ring_swift', 'ring_blood'])];
+  const gear = d <= 2 ? ['w_sword', 'a_chain', 'ring_regen', 'w_staff']
+    : ['ring_might', 'ring_guard', 'ring_focus', 'ring_regen', 'ring_swift', 'ring_blood', 'w_fangs'];
   return [RNG.pick(consumables), RNG.pick(scrolls), RNG.pick(gear)];
 }
 

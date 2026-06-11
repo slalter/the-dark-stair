@@ -65,7 +65,8 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   attackMonster, castSpell, castCleave, castCharge, castShadowDash, spawnMonster, monsterAt,
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
-  computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold };
+  computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
+  useItem, castBulwark, castVault };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -334,6 +335,76 @@ console.log('\n=== class defenses ===');
   p = fresh('rogue'); p.hp = p.maxHp;
   g.hurtPlayer(8, 'test');
   check('rogue takes hits raw (dodge rolls at attack site)', p.maxHp - p.hp === 8, `took ${p.maxHp - p.hp}, want 8`);
+}
+
+/* ---------- item & active-ability truth (widgets 2777b20b, d549698a, adbad3fe-actives) ---------- */
+console.log('\n=== weapons with souls · rings · actives ===');
+{
+  // ashwood staff: +6 max mana while wielded, for mana classes only
+  let p = fresh('mage');
+  const mm0 = p.maxMana;
+  p.inventory.length = 0; p.inventory.push({ id: 'w_staff', count: 1 });
+  g.useItem(0);
+  check('staff grants +6 max mana on equip', p.maxMana === mm0 + 6, `maxMana ${p.maxMana}, want ${mm0 + 6}`);
+  p.inventory.length = 0; p.inventory.push({ id: 'w_dagger', count: 1 });
+  g.useItem(0); // swap away — the well leaves with the wood
+  check('staff mana leaves on unequip', p.maxMana === mm0, `maxMana ${p.maxMana}, want ${mm0}`);
+  p = fresh('warrior');
+  p.inventory.length = 0; p.inventory.push({ id: 'w_staff', count: 1 });
+  g.useItem(0);
+  check('staff gives the warrior no phantom mana bar', p.maxMana === 0, `maxMana ${p.maxMana}, want 0`);
+
+  // soulglass orb: kills siphon +2 total
+  p = fresh('mage'); p.weapon = 'w_orb'; p.mana = 0;
+  { const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1; g.killMonster(m); }
+  check('orb doubles the kill siphon', p.mana === 2, `mana ${p.mana}, want 2`);
+
+  // tempest maul: ability cooldowns shed 2 turns
+  p = fresh('warrior'); p.weapon = 'w_maul';
+  { const spot = adjSpot(p); g.spawnMonster('rat', spot[0], spot[1]); }
+  g.castCleave();
+  check('maul quickens cleave', p.cleaveCd === 8 - 1, `cleaveCd ${p.cleaveCd}, want 7 (10-2, ticked once)`);
+
+  // twin fangs: backstabs bite one tier deeper (x4 base)
+  p = fresh('rogue'); p.weapon = 'w_fangs'; p.baseAtk = 10; p.crit = 0;
+  { const spot = adjSpot(p); const m = g.spawnMonster('golem', spot[0], spot[1]); m.awake = false; m.def = 0;
+    const hp0 = m.hp = 200; g.attackMonster(m);
+    const dealt = hp0 - m.hp;
+    check('fangs deepen the backstab to x4', dealt >= 4 * (10 + g.ITEMS.w_fangs.bonus - 1) && dealt <= 4 * (10 + g.ITEMS.w_fangs.bonus + 2), `dealt ${dealt}`); }
+
+  // ring of the zephyr: +8% dodge
+  p = fresh('rogue'); p.ring = 'ring_swift';
+  check('zephyr ring lifts dodge by 8%', Math.abs(g.playerDodge() - (0.18 + 0.08)) < 1e-9, `dodge ${g.playerDodge()}`);
+
+  // ring of the leech: kills feed 1 HP
+  p = fresh('warrior'); p.ring = 'ring_blood'; p.hp = 10;
+  { const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1; g.killMonster(m); }
+  check('leech ring feeds 1 HP on kill', p.hp === 11, `hp ${p.hp}, want 11`);
+
+  // BULWARK (active): every hit turned aside to 1 until next turn, then it lowers
+  p = fresh('warrior'); p.hp = p.maxHp; G.monsters.length = 0;
+  g.castBulwark();
+  check('bulwark goes on cooldown', p.guardCd > 0, `guardCd ${p.guardCd}`);
+  check('bulwark lowers after the foes reply', p.guardT === 0, `guardT ${p.guardT}`);
+  p.guardT = 1; const bhp = p.hp;
+  g.hurtPlayer(15, 'test'); g.hurtPlayer(15, 'test');
+  check('planted shield turns every hit to 1', bhp - p.hp === 2, `took ${bhp - p.hp}, want 2`);
+
+  // VAULT (active): leap clean over an adjacent foe
+  p = fresh('rogue');
+  { const spot = laneSpot(p, 2); // need monster adjacent + free tile beyond
+    if (!spot) console.log('SKIP  vault — no clear lane on this map seed');
+    else {
+      const dx = Math.sign(spot[0] - p.x), dy = Math.sign(spot[1] - p.y);
+      g.spawnMonster('rat', p.x + dx, p.y + dy);
+      const x0 = p.x, y0 = p.y;
+      g.castVault();
+      check('vault lands two tiles past the foe', p.x === x0 + dx * 2 && p.y === y0 + dy * 2, `at ${p.x},${p.y} from ${x0},${y0}`);
+      check('vault goes on cooldown', p.vaultCd > 0, `vaultCd ${p.vaultCd}`);
+    } }
+  p = fresh('rogue'); G.monsters.length = 0;
+  { const x0 = p.x, y0 = p.y; g.castVault();
+    check('vault refuses with no foe adjacent', p.x === x0 && p.y === y0 && p.vaultCd === 0, `moved or burned cd`); }
 }
 
 console.log(failures.length ? `\n${failures.length} FAILURES: ${failures.join(', ')}` : '\nall boons truthful');

@@ -223,6 +223,8 @@ kbd {
 }
 .sanctum-item:hover { border-color: var(--gold); }
 .sanctum-item.owned { opacity: .55; cursor: default; border-color: #2c4434; }
+.sanctum-item.locked { opacity: .35; cursor: default; }
+.sanctum-item.locked:hover { border-color: var(--panel-border); }
 .sanctum-item .s-name { font-size: 14px; color: #fff; }
 .sanctum-item .s-desc { font-size: 12px; color: var(--dim); }
 .sanctum-item .s-cost { margin-left: auto; color: var(--gold); font-family: Consolas, monospace; white-space: nowrap; }

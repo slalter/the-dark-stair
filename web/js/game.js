@@ -308,10 +308,13 @@ function toggleSanctum(force) {
   list.innerHTML = '';
   for (const [id, s] of Object.entries(SANCTUM)) {
     const owned = sanctumOwned(id);
+    // the tree: deeper kindlings stay dark until their root is lit
+    const locked = !owned && s.requires && !sanctumOwned(s.requires);
     const item = document.createElement('button');
-    item.className = 'sanctum-item' + (owned ? ' owned' : '');
-    item.innerHTML = `<div><div class="s-name">${s.name}</div><div class="s-desc">${s.desc}</div></div>` +
-      `<div class="s-cost">${owned ? 'KINDLED' : s.cost + ' ◈'}</div>`;
+    item.className = 'sanctum-item' + (owned ? ' owned' : '') + (locked ? ' locked' : '');
+    item.innerHTML = `<div><div class="s-name">${locked ? '🔒 ' : ''}${s.name}</div><div class="s-desc">${s.desc}</div></div>` +
+      `<div class="s-cost">${owned ? 'KINDLED' : locked ? 'needs ' + SANCTUM[s.requires].name : s.cost + ' ◈'}</div>`;
+    if (locked) { item.disabled = true; list.appendChild(item); continue; }
     if (!owned) item.addEventListener('click', ev => {
       ev.currentTarget.blur();
       if (getEmbers() < s.cost) { Sfx.hit(); return; }
@@ -364,11 +367,14 @@ function newPlayer(cls) {
     gold: 0, poison: 0,
     keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0,
     boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
+    guardT: 0, guardCd: 0, vaultCd: 0,
     inventory: [], weapon: null, armor: null, ring: null,
     flashT: 0,
   };
 }
 const ringIs = id => G.player.ring === id;
+// tempest maul: ability cooldowns shed 2 turns while it's in hand
+const tempoEdge = () => (G.player && G.player.weapon && ITEMS[G.player.weapon].trait === 'tempo') ? 2 : 0;
 const dreadShift = () => (hasBoon('b_fleet') ? 40 : 0) + (hasBoon('b_reaper') ? 20 : 0);
 const hasBoon = id => !!(G.player && G.player.boons && G.player.boons[id]);
 const playerAtk = () => G.player.baseAtk + (G.player.weapon ? ITEMS[G.player.weapon].bonus : 0) + (ringIs('ring_might') ? 2 : 0)
@@ -378,6 +384,7 @@ const playerDef = () => G.player.baseDef + (G.player.armor ? ITEMS[G.player.armo
   + (G.player.bulwarkT > 0 ? 3 : 0);
 const playerDodge = () => clamp(G.player.dodge + (hasBoon('b_fleet') ? 0.15 : 0)
   + (hasBoon('b_ghost') ? 0.08 : 0) - (hasBoon('b_shadow') ? 0.08 : 0)
+  + (ringIs('ring_swift') ? 0.08 : 0)
   - (G.map && G.map.get(G.player.x, G.player.y) === T.WATER ? 0.15 : 0), 0, 0.75);
 // score counts gold EARNED (spending costs nothing) plus a win bonus that decays with dawdling
 const score = () => Math.round(G.diff.scoreMult * (
@@ -428,9 +435,11 @@ function newGame(classId) {
   // sanctum gifts kindle every new run — except dailies, which stay a level field
   if (!G.daily) {
     if (sanctumOwned('s_flask')) addItem('potion_heal');
+    if (sanctumOwned('s_flask2')) addItem('potion_vigor');
     if (sanctumOwned('s_map')) addItem('scroll_map');
-    if (sanctumOwned('s_purse')) G.player.gold += 25;
+    if (sanctumOwned('s_purse')) G.player.gold += sanctumOwned('s_purse2') ? 60 : 25;
     if (sanctumOwned('s_stone')) G.player.baseAtk += 1;
+    if (sanctumOwned('s_stone2')) G.player.baseDef += 1;
     if (sanctumOwned('s_ring')) addItem(RNG.pick(['ring_regen', 'ring_might', 'ring_guard', 'ring_focus']));
   }
   startLevel(1);
@@ -465,6 +474,13 @@ function startLevel(depth) {
   G.map = map;
   const theme = map.theme;
   G.stairsPos = map.stairsPos;
+  // Keeper's Lore (sanctum tier 2): the way down is known from the first step
+  if (sanctumOwned('s_lore') && map.stairsPos) {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const sx = map.stairsPos.x + dx, sy = map.stairsPos.y + dy;
+      if (map.inBounds(sx, sy)) map.explored[map.idx(sx, sy)] = 1;
+    }
+  }
   if (theme.msg) addMsg(theme.msg, 'm-magic');
   if (G.map.vault) addMsg(`Old hands built something here: ${G.map.vault}.`, 'm-dim');
   // the dark stair's toll and reward
@@ -802,6 +818,9 @@ function afterPlayerTurn() {
   if (p.chargeCd > 0) p.chargeCd--;
   if (p.dashCd > 0) p.dashCd--;
   if (p.bulwarkT > 0) p.bulwarkT--;
+  if (p.guardCd > 0) p.guardCd--;
+  if (p.vaultCd > 0) p.vaultCd--;
+  if (p.guardT > 0) p.guardT--; // the planted shield lowers after the foes' reply
   // the dread clock: linger too long and the dark sends MELEE hunters (capped, worthless XP)
   const dreadAt = G.diff.dreadAt - dreadShift();
   if (G.floorTurns === dreadAt - 29) addMsg('The shadows lean closer. Best not linger.', 'm-dim');
@@ -866,7 +885,7 @@ function attackMonster(m, bonus = 0) {
   const crit = !backstab && RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0));
   let dmg = Math.max(1, playerAtk() + bonus + RNG.int(-1, 2) - m.def);
   if (m.frozen > 0 && hasBoon('b_frost')) dmg += 2;
-  if (backstab) dmg *= hasBoon('b_shadow') ? 4 : 3;
+  if (backstab) dmg *= (hasBoon('b_shadow') ? 4 : 3) + (p.weapon && ITEMS[p.weapon].trait === 'shadow' ? 1 : 0);
   else if (crit) dmg *= 2;
   m.hp -= dmg;
   m.flashT = 1;
@@ -923,8 +942,9 @@ function killMonster(m) {
   // the mage drinks the moment of death: kills siphon +1 mana (player feedback:
   // +2 made the mage 'too powerful' — Mana Font's +1 restores the old rate)
   if (G.player && G.player.maxMana > 0 && (m.xp > 0 || m.boss) && G.player.mana < G.player.maxMana) {
-    G.player.mana = Math.min(G.player.maxMana, G.player.mana + 1);
-    if (G.visible.has(m.x + ',' + m.y)) spawnFloater(m.x, m.y, '+1 mana', '#9ecbff');
+    const sip = 1 + (G.player.weapon && ITEMS[G.player.weapon].trait === 'siphon' ? 1 : 0);
+    G.player.mana = Math.min(G.player.maxMana, G.player.mana + sip);
+    if (G.visible.has(m.x + ',' + m.y)) spawnFloater(m.x, m.y, `+${sip} mana`, '#9ecbff');
   }
   const idx = G.monsters.indexOf(m);
   if (idx < 0) return;
@@ -943,6 +963,7 @@ function killMonster(m) {
     if (hasBoon('b_momentum')) p.momentum = Math.min(3, p.momentum + 1);
     if (hasBoon('b_font') && p.maxMana > 0) p.mana = Math.min(p.maxMana, p.mana + 1);
     if (hasBoon('b_reaper')) earnGold(1);
+    if (ringIs('ring_blood') && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + 1);
   }
   addDecal(m.x, m.y);
   spawnBurst(m.x, m.y, m.color, m.boss ? 40 : 12, m.boss ? 130 : 70);
@@ -997,7 +1018,11 @@ function hurtPlayer(dmg, srcName) {
   // armor to dull the first hit each turn; mage WARDS — mana drinks half of
   // any blow at 1 mana per 2 damage. Deterministic so the player can plan
   // around them, unlike dodge.
-  if (G.classId === 'warrior' && !p.braced && dmg > 1) {
+  // BULWARK (active): the shield is planted — nothing meaningful gets through
+  if (p.guardT > 0 && dmg > 1) {
+    spawnFloater(p.x, p.y, `bulwark -${dmg - 1}`, '#9ecbff');
+    dmg = 1;
+  } else if (G.classId === 'warrior' && !p.braced && dmg > 1) {
     // 1 + half armor: 2+armor sim-tested at 40% standard / 25% NIGHTMARE
     // bot winrate (baseline ~10%/0%) — the wall must bend, not trivialize
     const red = Math.min(dmg - 1, 1 + Math.ceil((p.armor ? ITEMS[p.armor].bonus : 0) / 2));
@@ -1371,7 +1396,7 @@ function castCharge() {
     if (d < pd) { pd = d; pick = { m, tx: cx, ty: cy }; }
   }
   if (!pick) { addMsg('No foe in charge range — you need a clear, straight line (2-4 tiles).', 'm-dim'); return; }
-  p.chargeCd = 10;
+  p.chargeCd = 10 - tempoEdge();
   spawnBurst(p.x, p.y, '#ffd75e', 8, 60);
   p.x = pick.tx; p.y = pick.ty;
   p.rx = p.x; p.ry = p.y;
@@ -1383,6 +1408,54 @@ function castCharge() {
     pick.m.skipT = Math.max(pick.m.skipT, 1); pick.m.stirring = true;
     if (G.visible.has(pick.m.x + ',' + pick.m.y)) spawnFloater(pick.m.x, pick.m.y, 'reeling', '#ffd75e');
   }
+  if (G.state !== 'PLAY') return;
+  if (!onEnterTile(p.x, p.y)) return;
+  afterPlayerTurn();
+}
+
+/* warrior-only ACTIVE: Bulwark — plant the shield and let the dark break on it.
+   Until your next turn every hit is turned aside to 1 damage. The cornered
+   warrior's answer when there is nothing to charge (user feedback: actives,
+   not passives — 'Warrior and Rogue can get caught in a corridor'). */
+function castBulwark() {
+  if (G.state !== 'PLAY') return;
+  const p = G.player;
+  if (p.guardCd > 0) { addMsg(`Your shield arm recovers in ${p.guardCd} ${p.guardCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); return; }
+  cancelTravel();
+  p.guardT = 1;
+  p.guardCd = 12 - tempoEdge();
+  addMsg('You plant your shield and set your feet. Let them come.', 'm-gold');
+  spawnFloater(p.x, p.y, 'BULWARK', '#9ecbff', 13);
+  Sfx.equip();
+  afterPlayerTurn();
+}
+
+/* rogue-only ACTIVE: Vault — leap clean over an adjacent foe and land behind
+   it. The cornered rogue's way out of a corridor wall of flesh. */
+function castVault() {
+  if (G.state !== 'PLAY') return;
+  const p = G.player;
+  if (p.vaultCd > 0) { addMsg(`Vault recovers in ${p.vaultCd} ${p.vaultCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); return; }
+  // candidate: adjacent monster with a free tile straight beyond it;
+  // prefer the landing spot with the fewest foes breathing on it
+  let best = null, bestCrowd = 99;
+  for (const [dx, dy] of DIRS8) {
+    const m = monsterAt(p.x + dx, p.y + dy);
+    if (!m) continue;
+    const lx = p.x + dx * 2, ly = p.y + dy * 2;
+    if (!G.map.walkable(lx, ly) || monsterAt(lx, ly)) continue;
+    let crowd = 0;
+    for (const [adx, ady] of DIRS8) if (monsterAt(lx + adx, ly + ady)) crowd++;
+    if (crowd < bestCrowd) { bestCrowd = crowd; best = { lx, ly, m }; }
+  }
+  if (!best) { addMsg('No foe close enough to vault over.', 'm-dim'); return; }
+  cancelTravel();
+  spawnBurst(p.x, p.y, '#a8f0c0', 8, 60);
+  p.x = best.lx; p.y = best.ly;
+  lunge(p, best.m.x, best.m.y, -0.4);
+  p.vaultCd = 8 - tempoEdge();
+  addMsg(`You vault clean over the ${best.m.name} and land soft behind it.`, 'm-good');
+  Sfx.dash ? Sfx.dash() : Sfx.equip();
   if (G.state !== 'PLAY') return;
   if (!onEnterTile(p.x, p.y)) return;
   afterPlayerTurn();
@@ -1420,7 +1493,7 @@ function castShadowDash() {
     if (d < sd) { sd = d; spot = [nx, ny]; }
   }
   if (!spot) { addMsg('No shadow to step from beside that foe.', 'm-dim'); return; }
-  p.dashCd = 12;
+  p.dashCd = 12 - tempoEdge();
   spawnBurst(p.x, p.y, '#a8f0c0', 10, 70);
   p.x = spot[0]; p.y = spot[1];
   p.rx = p.x; p.ry = p.y;
@@ -1550,7 +1623,7 @@ function castCleave() {
   if (p.cleaveCd > 0) { addMsg(`Cleave needs ${p.cleaveCd} more turns.`, 'm-dim'); return; }
   const targets = G.monsters.filter(m => cheb(m.x, m.y, p.x, p.y) <= 1);
   if (!targets.length) { addMsg('You sweep your blade through empty air.', 'm-dim'); return; }
-  p.cleaveCd = hasBoon('b_cleave') ? 5 : 10;
+  p.cleaveCd = (hasBoon('b_cleave') ? 5 : 10) - tempoEdge();
   if (hasBoon('b_cleave')) { p.hp = Math.max(1, p.hp - 2); spawnFloater(p.x, p.y, '-2', '#e35d6a'); }
   if (hasBoon('b_bulwark')) p.bulwarkT = 4;
   addShake(4);
@@ -1627,6 +1700,16 @@ function useItem(index) {
     p[slot] = entry.id;
     inv.splice(index, 1);
     if (old) inv.push({ id: old, count: 1 });
+    if (slot === 'weapon' && G.classDef.mana > 0) {
+      // the staff's well of mana travels with the wood — and only speaks
+      // to those who already hear it (no phantom mana bar for the warrior)
+      const manaOf = id => (id && ITEMS[id].trait === 'mana') ? 6 : 0;
+      const delta6 = manaOf(entry.id) - manaOf(old);
+      if (delta6) {
+        p.maxMana = Math.max(0, p.maxMana + delta6);
+        p.mana = Math.min(p.maxMana, Math.max(0, p.mana + Math.max(0, delta6)));
+      }
+    }
     const verb = slot === 'weapon' ? 'wield' : slot === 'armor' ? 'don' : 'slip on';
     const delta = slot === 'weapon' ? `⚔ ${oldStatW} → ${playerAtk()}`
       : slot === 'armor' ? `🛡 ${oldStatA} → ${playerDef()}`
@@ -2424,8 +2507,10 @@ function buildSpellPanel() {
   } else if (G.classId === 'warrior') {
     addRow('[V]', 'Cleave', 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
     addRow('[B]', 'Shield Charge', 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
+    addRow('[G]', 'Bulwark', 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
   } else {
     addRow('[V]', 'Shadow Dash', 'ready', 'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival', () => castShadowDash(), 'dash-row');
+    addRow('[B]', 'Vault', 'ready', 'leap clean over an adjacent foe and land behind it — the cornered rogue\'s way out', () => castVault(), 'vault-row');
     addRow('—', 'Backstab', '×3', 'passive: 3× damage against foes that are unaware, stirring or frozen', null);
     addRow('—', 'Shadowstep', '·', 'passive: monsters notice you 2 tiles later; you sense hidden traps', null);
   }
@@ -2467,6 +2552,16 @@ function updateUI() {
     dashRow.classList.toggle('cant', p.dashCd > 0);
     dashRow.querySelector('.cost').textContent = p.dashCd > 0 ? p.dashCd + 't' : 'ready';
   }
+  const bulwarkRow = $('bulwark-row');
+  if (bulwarkRow) {
+    bulwarkRow.classList.toggle('cant', p.guardCd > 0);
+    bulwarkRow.querySelector('.cost').textContent = p.guardCd > 0 ? p.guardCd + 't' : 'ready';
+  }
+  const vaultRow = $('vault-row');
+  if (vaultRow) {
+    vaultRow.classList.toggle('cant', p.vaultCd > 0);
+    vaultRow.querySelector('.cost').textContent = p.vaultCd > 0 ? p.vaultCd + 't' : 'ready';
+  }
   const statusBits = [];
   if (p.poison > 0) statusBits.push(`<span class="st-poison">☠ poisoned (${p.poison})</span>`);
   if (p.keys > 0) statusBits.push(`<span style="color:var(--gold)">⚿ key ×${p.keys}</span>`);
@@ -2475,6 +2570,7 @@ function updateUI() {
   if (G.daily) statusBits.push('<span style="color:var(--purple)">◆ daily</span>');
   if (hasBoon('b_momentum') && p.momentum > 0) statusBits.push('<span style="color:var(--gold)">⚔ momentum +' + p.momentum + '</span>');
   if (p.bulwarkT > 0) statusBits.push('<span style="color:var(--blue)">🛡 bulwark (' + p.bulwarkT + ')</span>');
+  if (p.guardT > 0) statusBits.push('<span style="color:var(--blue)">🛡 SHIELD PLANTED</span>');
   $('status-line').innerHTML = statusBits.join(' &nbsp; ');
   Music.setTension(G.state === 'PLAY' && dangerVisible());
   $('weapon-text').textContent = p.weapon ? `${ITEMS[p.weapon].name} (+${ITEMS[p.weapon].bonus})` : 'bare fists';
@@ -3018,9 +3114,9 @@ function toggleHelp() {
     cls.innerHTML = G.classId === 'mage'
       ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
-      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. Vault [B] leaps you clean OVER an adjacent foe — cornered is a choice now. A survivor of a botched stab screams. Frozen foes count as unaware.'
       : G.classId === 'warrior'
-      ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. You BLOCK the first hit each turn — the heavier your armor, the more it turns aside — so one big foe blunts itself on you, but a pack bleeds you. You are the wall; make them come through you.'
+      ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. Bulwark [G] plants your shield: until your next turn every hit is turned aside to 1 — spend the turn, soak the storm. You also passively BLOCK part of the first hit each turn (heavier armor, bigger block). You are the wall; make them come through you.'
       : '';
   }
 }
@@ -3105,7 +3201,7 @@ window.addEventListener('keydown', ev => {
     return;
   }
   if (key === 'f') { castSpell(0); return; }
-  if (key === 'g') { castSpell(1); return; }
+  if (key === 'g') { if (G.classId === 'warrior') castBulwark(); else castSpell(1); return; }
   if (key === 'h') { castSpell(2); return; }
   if (key === 'v') {
     if (G.classId === 'warrior') castCleave();
@@ -3115,7 +3211,7 @@ window.addEventListener('keydown', ev => {
   }
   if (key === 'b') {
     if (G.classId === 'warrior') castCharge();
-    else if (G.classId === 'rogue') castShadowDash();
+    else if (G.classId === 'rogue') castVault();
     else addMsg('Blink [V] is your way through space.', 'm-dim');
     return;
   }
@@ -3187,8 +3283,11 @@ window.addEventListener('keydown', ev => {
   });
   wireTb('tb-ability2', () => {
     if (G.classId === 'warrior') castCharge();
-    else if (G.classId === 'rogue') castShadowDash();
+    else if (G.classId === 'rogue') castVault();
     else castSpell(0);
+  });
+  wireTb('tb-ability3', () => {
+    if (G.classId === 'warrior') castBulwark();
   });
   wireTb('tb-potion', () => {
     if (G.state !== 'PLAY') return;
@@ -3199,11 +3298,12 @@ window.addEventListener('keydown', ev => {
   wireTb('tb-help', () => toggleHelp());
   // label the ability buttons for the chosen class once a run starts
   const relabel = () => {
-    const a = $('tb-ability'), b = $('tb-ability2');
+    const a = $('tb-ability'), b = $('tb-ability2'), c = $('tb-ability3');
     if (!a || !b) return;
     b.style.display = '';
-    if (G.classId === 'warrior') { a.textContent = 'cleave'; b.textContent = 'charge'; }
-    else if (G.classId === 'rogue') { a.textContent = 'dash'; b.style.display = 'none'; return; }
+    if (c) c.style.display = G.classId === 'warrior' ? '' : 'none';
+    if (G.classId === 'warrior') { a.textContent = 'cleave'; b.textContent = 'charge'; if (c) c.textContent = 'bulwark'; }
+    else if (G.classId === 'rogue') { a.textContent = 'dash'; b.textContent = 'vault'; }
     else if (G.classId === 'mage') { a.textContent = 'blink'; b.textContent = 'bolt'; }
   };
   setInterval(relabel, 1500);
