@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="index, follow">
+<title>The Dark Stair — Free Browser Roguelike Dungeon Crawler</title>
+<meta name="description" content="The Dark Stair is a free browser roguelike: descend six floors of a procedurally generated dungeon as warrior, rogue, or mage and face the Lich. No download, no signup — play instantly. Daily challenge included.">
+<link rel="canonical" href="https://www.gurucloudai.com/dark-stair-demo/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GuruCloudAI">
+<meta property="og:title" content="The Dark Stair — Free Browser Roguelike">
+<meta property="og:description" content="Descend six floors of procedurally generated dungeon and face the Lich. Warrior, rogue, or mage — play free in your browser, no download or signup.">
+<meta property="og:url" content="https://www.gurucloudai.com/dark-stair-demo/">
+<meta property="og:image" content="https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="853">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Dark Stair — Free Browser Roguelike">
+<meta name="twitter:description" content="Descend six floors of procedurally generated dungeon and face the Lich. Play free in your browser — no download, no signup.">
+<meta name="twitter:image" content="https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoGame",
+  "name": "The Dark Stair",
+  "url": "https://www.gurucloudai.com/dark-stair-demo/",
+  "image": "https://www.gurucloudai.com/dark-stair-demo/title-bg.jpg",
+  "description": "A free browser roguelike dungeon crawler. Descend six procedurally generated floors as warrior, rogue, or mage, collect boons and gear, and face the Lich. Includes three difficulties and a seeded daily challenge.",
+  "genre": ["Roguelike", "Dungeon crawler"],
+  "playMode": "SinglePlayer",
+  "applicationCategory": "Game",
+  "gamePlatform": "Web Browser",
+  "operatingSystem": "Any",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "publisher": {"@type": "Organization", "name": "GuruCloudAI", "url": "https://www.gurucloudai.com"}
+}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2307070d'/%3E%3Ctext x='8' y='12' font-size='12' text-anchor='middle' fill='%23ffd75e' font-family='monospace'%3E@%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="wrap">
+  <div id="main">
+    <div id="canvas-holder">
+      <canvas id="canvas"></canvas>
+      <div id="vignette"></div>
+      <div id="hurt-flash"></div>
+
+      <div id="title-screen" class="overlay">
+        <canvas id="title-fx"></canvas>
+        <div class="title-inner">
+          <h1>THE DARK<span>STAIR</span></h1>
+          <p class="tagline">The Lich stirs six floors below. Choose who dares the dark.</p>
+          <div id="diff-row">
+            <button class="diff-chip" data-diff="story">ADVENTURER<span>a gentler dark</span></button>
+            <button class="diff-chip selected" data-diff="standard">VETERAN<span>as intended</span></button>
+            <button class="diff-chip" data-diff="nightmare">NIGHTMARE<span>the dark usually wins</span></button>
+          </div>
+          <div id="class-row">
+            <button class="class-card" data-class="warrior">
+              <div class="cc-key">1</div>
+              <div class="cc-glyph"><img src="sprites/player_warrior.png" alt="" class="cc-sprite"></div>
+              <div class="cc-name">WARRIOR</div>
+              <div class="cc-blurb">Heavy hands, heavier patience.</div>
+              <ul><li>42 HP · 8 ATK · 2 DEF</li><li>starts armed &amp; armored</li><li>V: Cleave — strike all adjacent</li></ul>
+            </button>
+            <button class="class-card" data-class="rogue">
+              <div class="cc-key">2</div>
+              <div class="cc-glyph"><img src="sprites/player_rogue.png" alt="" class="cc-sprite"></div>
+              <div class="cc-name">ROGUE</div>
+              <div class="cc-blurb">The dark is a tool. So is a knife.</div>
+              <ul><li>25% crits · 18% evasion</li><li>backstab: ×3 from the shadows</li><li>senses traps · stealthy</li></ul>
+            </button>
+            <button class="class-card" data-class="mage">
+              <div class="cc-key">3</div>
+              <div class="cc-glyph"><img src="sprites/player_mage.png" alt="" class="cc-sprite"></div>
+              <div class="cc-name">MAGE</div>
+              <div class="cc-blurb">Why swing steel when reality bends?</div>
+              <ul><li>20 mana · 4 spells</li><li>F bolt · G nova · H mend · V blink</li><li>devastating up close, weak afar</li></ul>
+            </button>
+          </div>
+          <div class="controls-line">
+            <kbd>WASD</kbd>/<kbd>←↑↓→</kbd>+<kbd>QEZC</kbd> move · <kbd>click</kbd> travel · <kbd>O</kbd> explore · <kbd>V</kbd> ability · <kbd>Space</kbd> wait · <kbd>Enter</kbd> descend · <kbd>1–0</kbd> items · <kbd>?</kbd> help
+          </div>
+          <p id="continue-line" class="hidden">[C] continue your run</p>
+          <p id="sanctum-line">[S] the Sanctum — spend soul embers on permanent gifts</p>
+          <p id="daily-line">[D] daily challenge — one seeded dungeon, same for everyone today</p>
+          <p id="best-line"></p>
+          <div id="version-tag">The Dark Stair · v4.0</div>
+        </div>
+      </div>
+
+      <div id="death-screen" class="overlay hidden">
+        <h1 class="red">YOU HAVE FALLEN</h1>
+        <p id="death-cause"></p>
+        <div id="death-stats" class="end-stats"></div>
+        <p id="death-tip" style="max-width:420px;margin:10px auto 0;color:#9aa0b8;font-style:italic;font-size:13px;line-height:1.5;"></p>
+        <button class="pause-btn" id="btn-share-death" style="margin-top:10px">Copy your epitaph</button>
+        <button class="pause-btn" id="btn-rise" style="margin-top:4px">Rise again</button>
+        <p class="press">— press R to rise again —</p>
+      </div>
+
+      <div id="cutscene" class="overlay hidden">
+        <div id="cut-image"></div>
+        <div id="cut-text"></div>
+        <p class="press" id="cut-hint">— press any key —</p>
+      </div>
+
+      <div id="boon-screen" class="overlay hidden">
+        <h1 class="gold" style="font-size:24px;letter-spacing:6px">THE DARK OFFERS GIFTS</h1>
+        <p class="tagline">Choose one. It will not offer twice.</p>
+        <div id="boon-row"></div>
+      </div>
+
+      <div id="sanctum-screen" class="overlay hidden">
+        <button class="pause-btn small" style="position:absolute;top:10px;right:12px;z-index:11" onclick="toggleSanctum(false)">✕ close</button>
+        <h1 class="gold" style="font-size:26px;letter-spacing:6px">THE SANCTUM</h1>
+        <p class="tagline">Soul embers survive your deaths. Spend them: <b id="ember-count" style="color:var(--gold)"></b> ◈</p>
+        <div id="sanctum-list"></div>
+        <p class="press">— press S or Esc to return —</p>
+      </div>
+
+      <div id="help-screen" class="overlay hidden">
+        <h1 class="gold" style="font-size:26px;letter-spacing:6px">HOW THE DARK WORKS</h1>
+        <div id="help-body" style="max-width:640px;text-align:left;font-size:13px;line-height:1.65;color:var(--text);max-height:62vh;overflow-y:auto;padding:0 18px;">
+          <p><b style="color:var(--gold)">Fighting.</b> Walk into a foe to strike it. WASD/arrows move, QEZC step diagonally — but you can never squeeze through a sealed corner. The faint ring marks the 8 tiles you can reach; a <span style="color:#ff7e7e">red-outlined tile</span> holds a foe in arm's reach.</p>
+          <p><b style="color:var(--gold)">The floor never lies.</b> Every big hit is painted a turn early: <span style="color:#ff8c1e">orange plus-marks</span> — a shell lands there; <span style="color:#ff9a82">a hot lane</span> — a charger gallops down it (sidestep and it lies dazed); <span style="color:#c77dff">violet line</span> — the Lich's beam; <span style="color:#ff5252">red square</span> — a crushing blow. Stand anywhere else.</p>
+          <p><b style="color:var(--gold)">Eyes and shots.</b> What watches you blocks auto-travel — the message names the direction, and pressing O again advances on it. Bolts need a clear line; 'no clear shot' means move first. Sleeping foes show a <b>z</b>; one that just spotted you shows <b style="color:var(--gold)">?</b> and loses that turn.</p>
+          <p id="help-class-block"></p>
+          <p><b style="color:var(--gold)">Keys & vaults.</b> The floor's elite carries a key; the golden chest is its lock. Keys crumble when you descend — spend them where you find them. The <span style="color:var(--red)">red stair</span> plunges PAST the next floor: richer spoils, but the dark rules where you land.</p>
+          <p><b style="color:var(--gold)">The clock.</b> Linger too long and the dark stirs, then hunts — something is sent for you. Gold, gear (press an item's number to use or wear it; mid-fight it asks twice), boons each floor, and soul embers on death for permanent Sanctum gifts.</p>
+        </div>
+        <button class="pause-btn small" id="btn-help-close" style="margin-top:6px">✕ close</button>
+        <p class="press">— press ? or Esc to return —</p>
+      </div>
+
+      <div id="pause-screen" class="overlay hidden">
+        <h1 class="gold" style="font-size:30px;letter-spacing:8px">PAUSED</h1>
+        <div id="pause-options">
+          <div class="opt-row"><span>Music</span><input type="range" id="opt-music" min="0" max="100" step="5"></div>
+          <div class="opt-row"><span>Sound effects</span><input type="range" id="opt-sfx" min="0" max="100" step="5"></div>
+          <div class="opt-row"><span>Screen shake</span><label class="opt-check"><input type="checkbox" id="opt-shake"> on</label></div>
+          <div class="opt-row"><span>Fullscreen</span><button class="pause-btn small" id="btn-fullscreen">toggle (F11)</button></div>
+        </div>
+        <div id="pause-actions">
+          <button class="pause-btn" id="btn-resume">Resume (Esc)</button>
+          <button class="pause-btn warn" id="btn-abandon">Abandon run</button>
+          <button class="pause-btn warn hidden" id="btn-quit">Quit to desktop</button>
+        </div>
+      </div>
+
+      <div id="win-screen" class="overlay hidden">
+        <h1 class="gold">THE LICH IS DESTROYED</h1>
+        <p>Light returns to the depths. Your legend is written in fire.</p>
+        <div id="win-stats" class="end-stats"></div>
+        <button class="pause-btn" id="btn-share-win" style="margin-top:10px">Copy your legend</button>
+        <button class="pause-btn" id="btn-again" style="margin-top:4px">Descend again</button>
+        <p class="press">— press R to play again —</p>
+      </div>
+    </div>
+    <div id="touch-bar" class="hidden">
+      <button id="tb-explore">explore</button>
+      <button id="tb-wait">wait</button>
+      <button id="tb-descend">descend</button>
+      <button id="tb-ability">ability</button>
+      <button id="tb-ability2">charge</button>
+      <button id="tb-help">?</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <div id="sidebar">
+    <div class="panel" id="hero-panel">
+      <div class="panel-title"><span id="hero-name">ADVENTURER</span></div>
+      <div class="bar-label"><span>HP</span><span id="hp-text"></span></div>
+      <div class="bar"><div id="hp-fill" class="bar-fill hp"></div></div>
+      <div id="mana-row">
+        <div class="bar-label"><span>MANA</span><span id="mana-text"></span></div>
+        <div class="bar"><div id="mana-fill" class="bar-fill mana"></div></div>
+      </div>
+      <div class="stat-grid">
+        <div><span>⚔ Attack</span><b id="atk-text"></b></div>
+        <div><span>🛡 Defense</span><b id="def-text"></b></div>
+        <div><span>◆ Depth</span><b id="depth-text"></b></div>
+        <div><span>$ Gold</span><b id="gold-text"></b></div>
+      </div>
+      <div id="status-line"></div>
+    </div>
+    <div class="panel" id="spell-panel">
+      <div class="panel-title" id="spell-title">ABILITIES</div>
+      <div id="spell-list"></div>
+      <div id="owned-boons"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">EQUIPMENT</div>
+      <div class="equip-line">/ <span id="weapon-text">bare fists</span></div>
+      <div class="equip-line">[ <span id="armor-text">tattered rags</span></div>
+      <div class="equip-line">○ <span id="ring-text">bare finger</span></div>
+    </div>
+    <div class="panel" id="inv-panel">
+      <div class="panel-title">INVENTORY <span id="inv-count"></span></div>
+      <div id="inv-list"></div>
+    </div>
+    <div class="panel" id="map-panel">
+      <div class="panel-title">MAP</div>
+      <canvas id="minimap" width="240" height="160"></canvas>
+    </div>
+  </div>
+</div>
+<script src="js/core.js"></script>
+<script src="js/data.js"></script>
+<script src="js/dungeon.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
