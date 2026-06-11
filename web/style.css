@@ -515,3 +515,16 @@ body.mobile-ui #mhud {
 #mhud .hud-hp > div { background: linear-gradient(90deg, #b33a4a, #e35d6a); }
 #mhud .hud-mana > div { background: linear-gradient(90deg, #3a5ab3, #9ecbff); }
 #mhud .hud-chips { font: bold 12px Consolas, monospace; color: var(--text); text-shadow: 0 1px 3px #000; white-space: nowrap; }
+
+/* mobile playtest round 1 (persona: Maya) fixes */
+/* keyboard hotkey chips mean nothing to a thumb */
+body.mobile-ui .spell-row .hotkey { display: none; }
+/* the drawer's two columns clipped stat values — hero panel gets the full row */
+body.mobile-ui.drawer-open #sidebar #hero-panel { grid-column: 1 / -1; }
+/* the feedback bubble sat on top of the message log — it lives top-right now */
+body.mobile-ui #guru-widget-btn {
+  bottom: auto !important; left: auto !important;
+  top: 30px !important; right: 8px !important;
+  width: 42px !important; height: 42px !important;
+  opacity: 0.85;
+}

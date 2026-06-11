@@ -243,8 +243,11 @@ function draw(t) {
   // ---- camera: center the player, clamp to the map, glide between moves ----
   {
     const { vw, vh } = camView();
+    // on phones the bottom ~25% of the screen is HUD + log, so the player
+    // rides above center — the boss fight should not happen behind buttons
+    const cy = MOBILE_UI ? 0.40 : 0.5;
     const tx2 = clamp((p.rx + 0.5) * CELL - vw / 2, 0, Math.max(0, WORLD_W - vw));
-    const ty2 = clamp((p.ry + 0.5) * CELL - vh / 2, 0, Math.max(0, WORLD_H - vh));
+    const ty2 = clamp((p.ry + 0.5) * CELL - vh * cy, 0, Math.max(0, WORLD_H - vh));
     if (CAM.snap) { CAM.x = tx2; CAM.y = ty2; CAM.snap = false; }
     else {
       CAM.x += (tx2 - CAM.x) * Math.min(1, dt60 * 7);

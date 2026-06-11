@@ -452,7 +452,11 @@ function newGame(classId) {
   addMsg(`The ${G.classDef.name.toLowerCase()} sets foot on the Dark Stair. The air is cold and old.`, 'm-magic');
   if (G.daily) addMsg(`DAILY CHALLENGE — ${dailyKey()}. One dungeon, same for all who dare today.`, 'm-gold');
   addMsg('Vyrakhel the Lich waits on floor 6. Find him. End him.', 'm-dim');
-  addMsg('Move with WASD/arrows — bump enemies to attack. O explores for you. ? for help.', 'm-dim');
+  if (typeof MOBILE_UI !== 'undefined' && MOBILE_UI) {
+    addMsg('Drag anywhere to walk — tap a foe to strike. ◎ explores for you, ☰ opens your pack.', 'm-dim');
+  } else {
+    addMsg('Move with WASD/arrows — bump enemies to attack. O explores for you. ? for help.', 'm-dim');
+  }
 }
 
 function startLevel(depth) {
@@ -1717,7 +1721,8 @@ function useItem(index) {
     addMsg(`You ${verb} the ${def.name}.${delta ? ' (' + delta + ')' : ''}`, 'm-good');
     Sfx.equip();
   } else if (entry.id === 'potion_heal') {
-    if (p.hp >= p.maxHp) { addMsg('You are unhurt — best save it.', 'm-dim'); return; }
+    // a 1-HP sip wastes a whole potion (mobile playtest drank at 62/63)
+    if (p.hp >= p.maxHp - 2) { addMsg('Barely a scratch — best save it.', 'm-dim'); return; }
     G.potionsDrunk++;
     const heal = Math.min(p.maxHp - p.hp, Math.round((14 + 2 * G.depth) * (G.diff.potionMult || 1) * ((hasBoon('b_pact') || hasBoon('b_regen')) ? 0.5 : 1)));
     p.hp += heal;
@@ -2324,10 +2329,43 @@ const compass = (x, y) => {
   return (ns + ew) || 'right here';
 };
 
+/* a watcher blocks travel — but a second ask (within 8 turns) pushes one
+   step toward it, and an adjacent watcher just gets hit. Shared by
+   auto-explore, travel, and descend so no verb ever deadlocks (mobile
+   playtest: ▼ refused in a loop while ◎ knew how to advance). */
+function advanceOnWatcher(w1) {
+  const p = G.player;
+  if (cheb(w1.x, w1.y, p.x, p.y) <= 1) {
+    attackMonster(w1);
+    if (G.state === 'PLAY') afterPlayerTurn();
+    return true;
+  }
+  if (G.lastWatchRefusal != null && G.turn - G.lastWatchRefusal <= 8) {
+    const f = computeDistField(G.map, w1.x, w1.y, 60);
+    let best = null, bd = f[G.map.idx(p.x, p.y)];
+    if (bd !== -1) {
+      for (const [dx, dy] of DIRS8) {
+        const nx = p.x + dx, ny = p.y + dy;
+        if (!G.map.inBounds(nx, ny) || monsterAt(nx, ny)) continue;
+        if (!diagOpen(G.map, p.x, p.y, dx, dy)) continue;
+        const fd = f[G.map.idx(nx, ny)];
+        if (fd !== -1 && fd < bd) { bd = fd; best = [dx, dy]; }
+      }
+    }
+    if (best) { addMsg(`You advance on ${theM(w1)}.`, 'm-dim'); tryMove(best[0], best[1]); return true; }
+    addMsg(`No clear path to ${theM(w1)} — step around by hand.`, 'm-dim');
+    return true;
+  }
+  G.lastWatchRefusal = G.turn;
+  const again = (typeof MOBILE_UI !== 'undefined' && MOBILE_UI) ? 'Tap again' : 'Ask again';
+  addMsg(`Not while ${theM(w1)} watches — ${compass(w1.x, w1.y)} of you. ${again} to advance on it.`, 'm-dim');
+  return true;
+}
+
 function startTravelTo(tx, ty) {
   if (G.state !== 'PLAY') return;
   const w0 = watcher();
-  if (w0) { addMsg(`Not while ${theM(w0)} watches — ${compass(w0.x, w0.y)} of you.`, 'm-dim'); return; }
+  if (w0) { advanceOnWatcher(w0); return; }
   if (!G.map.inBounds(tx, ty)) return;
   // chests, shrines, vaults, the gilded corpse: walk to a tile beside them
   const tt = G.map.get(tx, ty);
@@ -2377,35 +2415,9 @@ function stepTravel() {
 function autoExplore() {
   if (G.state !== 'PLAY') return;
   const map = G.map, p = G.player;
-  // a watcher blocks travel — but pressing O again pushes one step toward it
+  // a watcher blocks travel — but asking again pushes one step toward it
   const w1 = watcher();
-  if (w1) {
-    // beside you already? O strikes it — never repeat a failed instruction
-    if (cheb(w1.x, w1.y, p.x, p.y) <= 1) {
-      attackMonster(w1);
-      if (G.state === 'PLAY') afterPlayerTurn();
-      return;
-    }
-    if (G.lastWatchRefusal != null && G.turn - G.lastWatchRefusal <= 8) {
-      const f = computeDistField(G.map, w1.x, w1.y, 60);
-      let best = null, bd = f[G.map.idx(p.x, p.y)];
-      if (bd !== -1) {
-        for (const [dx, dy] of DIRS8) {
-          const nx = p.x + dx, ny = p.y + dy;
-          if (!G.map.inBounds(nx, ny) || monsterAt(nx, ny)) continue;
-          if (!diagOpen(G.map, p.x, p.y, dx, dy)) continue;
-          const fd = f[G.map.idx(nx, ny)];
-          if (fd !== -1 && fd < bd) { bd = fd; best = [dx, dy]; }
-        }
-      }
-      if (best) { addMsg(`You advance on ${theM(w1)}.`, 'm-dim'); tryMove(best[0], best[1]); return; }
-      addMsg(`No clear path to ${theM(w1)} — step around by hand (WASD/QEZC).`, 'm-dim');
-      return;
-    }
-    G.lastWatchRefusal = G.turn;
-    addMsg(`Not while ${theM(w1)} watches — ${compass(w1.x, w1.y)} of you. Press O again to advance on it.`, 'm-dim');
-    return;
-  }
+  if (w1) { advanceOnWatcher(w1); return; }
   G.lastWatchRefusal = null;
   // BFS over explored walkable tiles to the nearest frontier (tile with an unexplored neighbor)
   const field = new Int16Array(map.w * map.h).fill(-1);
@@ -3404,7 +3416,9 @@ let joySuppressClick = false;
   document.body.appendChild(hud);
 
   const tap = (id, fn) => { const b = hud.querySelector('#' + id); if (b) b.addEventListener('click', ev => { ev.currentTarget.blur(); Sfx.ensure(); Music.start(); fn(); }); };
-  tap('mb-bag', () => document.body.classList.toggle('drawer-open'));
+  // the pack stays shut during boon choice — the drawer was opening OVER
+  // the gift cards and eating their taps (mobile playtest bug #1)
+  tap('mb-bag', () => { if (G.state === 'PLAY') document.body.classList.toggle('drawer-open'); });
   tap('mb-explore', () => autoExplore());
   tap('mb-wait', () => { if (G.state !== 'PLAY') return; addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); });
   tap('mb-descend', () => { if (G.state !== 'PLAY') return; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); });
@@ -3412,6 +3426,22 @@ let joySuppressClick = false;
   // the log rolls and burns away; a tap opens the full scroll
   const logEl = $('log');
   if (logEl) logEl.addEventListener('click', () => logEl.classList.toggle('expanded'));
+
+  // touch-true copy: cutscenes advance on tap, not keys
+  const cutHint = $('cut-hint');
+  if (cutHint) cutHint.textContent = '— tap to continue —';
+
+  // first run on a phone: one joystick hint, once ever
+  let joyHinted = false;
+  try { joyHinted = !!localStorage.getItem('arcaneJoyHint'); } catch (e) { /* ignore */ }
+  const maybeHint = () => {
+    if (joyHinted || G.state !== 'PLAY') return;
+    joyHinted = true;
+    try { localStorage.setItem('arcaneJoyHint', '1'); } catch (e) { /* ignore */ }
+    spawnFloater(G.player.x, G.player.y, 'drag anywhere to walk', '#a8f0c0', 13);
+    addMsg('Drag anywhere on the dungeon to walk that way — hold to keep walking.', 'm-gold');
+  };
+  setInterval(maybeHint, 800);
 
   // ability cluster: little sprite-buttons with cooldown/cost/count badges
   const mkBtn = (glyph, title, fn) => {
@@ -3455,6 +3485,7 @@ let joySuppressClick = false;
     const p = G.player;
     const inRun = p && (G.state === 'PLAY' || G.state === 'BOON');
     hud.style.display = inRun ? 'block' : 'none';
+    if (G.state !== 'PLAY') document.body.classList.remove('drawer-open');
     if (!inRun) return;
     if (builtFor !== G.classId) rebuild();
     $('mh-hp').style.width = (100 * p.hp / p.maxHp) + '%';
