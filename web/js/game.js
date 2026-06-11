@@ -933,8 +933,8 @@ function attackMonster(m, bonus = 0) {
     addMsg(`Your blade finds the gap — backstab for ${dmg}!`, 'm-gold');
     Sfx.crit(); addShake(3);
     if (m.hp <= 0 && hasBoon('b_rhythm') && p.dashCd > 0) {
-      p.dashCd = Math.max(0, p.dashCd - 6);
-      addMsg('The rhythm holds — the shadows open for you again soon.', 'm-good');
+      p.dashCd = 0; // full refresh (live whisper: 'fun if hunter's rhythm was a full refresh')
+      addMsg('The rhythm holds — the shadows open for you AGAIN.', 'm-gold');
     }
     if (m.hp > 0) {
       // a botched assassination is loud
@@ -1511,6 +1511,56 @@ function castVault() {
   afterPlayerTurn();
 }
 
+/* aim hints (live whisper: 'some kind of aiming mechanism? subtle/
+   discoverable, like the way hades does it'): for each READY targeted
+   ability, report the foe it would take right now. The renderer draws
+   faint corner brackets there. */
+function aimHints() {
+  const hints = [];
+  if (G.state !== 'PLAY' || !G.player) return hints;
+  const p = G.player;
+  if (G.classId === 'mage' && p.mana >= spellCost(0)) {
+    let best = null, bd = 1e9;
+    for (const m of G.monsters) {
+      if (!G.visible.has(m.x + ',' + m.y)) continue;
+      const d = dist2(m.x, m.y, p.x, p.y);
+      if (d < bd) { bd = d; best = m; }
+    }
+    if (best) hints.push({ x: best.x, y: best.y, color: '#ff8c5e' });
+  } else if (G.classId === 'rogue' && p.dashCd <= 0) {
+    let best = null, bd = 1e9;
+    for (const m of G.monsters) {
+      if (!G.visible.has(m.x + ',' + m.y)) continue;
+      const c = cheb(m.x, m.y, p.x, p.y);
+      if (c < 1 || c > 3) continue;
+      const d = dist2(m.x, m.y, p.x, p.y);
+      if (d < bd) { bd = d; best = m; }
+    }
+    if (best) hints.push({ x: best.x, y: best.y, color: '#a8f0c0' });
+  } else if (G.classId === 'warrior' && p.chargeCd <= 0) {
+    let pick = null, pd = 1e9;
+    for (const m of G.monsters) {
+      if (!G.visible.has(m.x + ',' + m.y)) continue;
+      const adx = m.x - p.x, ady = m.y - p.y;
+      const c = cheb(m.x, m.y, p.x, p.y);
+      if (c < 2 || c > (hasBoon('b_juggern') ? 6 : 4)) continue;
+      if (adx !== 0 && ady !== 0 && Math.abs(adx) !== Math.abs(ady)) continue;
+      const sx = Math.sign(adx), sy = Math.sign(ady);
+      let cx = p.x, cy = p.y, clear = true;
+      for (let st = 1; st < c && st <= (hasBoon('b_juggern') ? 6 : 4); st++) {
+        if (!diagOpen(G.map, cx, cy, sx, sy)) { clear = false; break; }
+        cx += sx; cy += sy;
+        if (!G.map.walkable(cx, cy) || monsterAt(cx, cy)) { clear = false; break; }
+      }
+      if (!clear || !diagOpen(G.map, cx, cy, sx, sy)) continue;
+      const d = dist2(m.x, m.y, p.x, p.y);
+      if (d < pd) { pd = d; pick = m; }
+    }
+    if (pick) hints.push({ x: pick.x, y: pick.y, color: '#ffd75e' });
+  }
+  return hints;
+}
+
 /* rogue-only: Shadow Dash — melt through the dark to a tile beside a foe;
    if they haven't fully clocked you (dozing, stirring, frozen), strike as a backstab on arrival */
 function castShadowDash() {
@@ -1520,7 +1570,9 @@ function castShadowDash() {
   if (p.dashCd > 0) { addMsg(`Shadow Dash needs ${p.dashCd} more turns.`, 'm-dim'); return; }
   // hover target first, else nearest visible foe within 3
   let target = null;
-  const inRange = m => G.visible.has(m.x + ',' + m.y) && cheb(m.x, m.y, p.x, p.y) >= 2 && cheb(m.x, m.y, p.x, p.y) <= 3;
+  // range 1-3: at melee range the dash slips AROUND the foe (live whisper:
+  // 'im diagonal from a rat and i cant shadow dash')
+  const inRange = m => G.visible.has(m.x + ',' + m.y) && cheb(m.x, m.y, p.x, p.y) >= 1 && cheb(m.x, m.y, p.x, p.y) <= 3;
   if (FX.hover) {
     const hm = monsterAt(FX.hover.x, FX.hover.y);
     if (hm && inRange(hm)) target = hm;
@@ -1533,14 +1585,16 @@ function castShadowDash() {
       if (d < bd) { bd = d; target = m; }
     }
   }
-  if (!target) { addMsg('No foe within dash reach (2-3 tiles, in sight).', 'm-dim'); return; }
-  let spot = null, sd = 1e9;
+  if (!target) { addMsg('No foe within dash reach (3 tiles, in sight).', 'm-dim'); return; }
+  // land BEHIND the foe (live whisper): prefer the adjacent tile farthest
+  // from where you started — the far side of its body
+  let spot = null, sd = -1;
   for (const [dx, dy] of DIRS8) {
     const nx = target.x + dx, ny = target.y + dy;
     if (!G.map.walkable(nx, ny) || monsterAt(nx, ny) || (nx === p.x && ny === p.y)) continue;
     if (!G.visible.has(nx + ',' + ny)) continue;
     const d = dist2(nx, ny, p.x, p.y);
-    if (d < sd) { sd = d; spot = [nx, ny]; }
+    if (d > sd) { sd = d; spot = [nx, ny]; }
   }
   if (!spot) { addMsg('No shadow to step from beside that foe.', 'm-dim'); return; }
   p.dashCd = 12 - tempoEdge();
@@ -1549,12 +1603,16 @@ function castShadowDash() {
   p.rx = p.x; p.ry = p.y;
   spawnBurst(p.x, p.y, '#a8f0c0', 10, 70);
   Sfx.scroll();
+  // the dash IS the attack — one turn, blade out on arrival (live whisper:
+  // 'should automatically attack once and it shouldn't take a turn').
+  // Backstab rules unchanged: the unaware eat the x3; Vault keeps the
+  // guaranteed stab as its identity.
   if (!target.awake || target.stirring || target.frozen > 0) {
     addMsg('You pour out of the darkness, blade first.', 'm-gold');
-    attackMonster(target); // backstab rules apply: unaware/frozen targets eat the x3
   } else {
-    addMsg('You melt through the dark and reappear at its side.', 'm-magic');
+    addMsg('You melt through the dark behind it, blade already moving.', 'm-magic');
   }
+  attackMonster(target);
   if (hasBoon('b_fade')) {
     let faded = 0;
     for (const o of G.monsters) {
@@ -2577,7 +2635,7 @@ function buildSpellPanel() {
     addRow('[B]', `${ABILITY_GLYPHS.charge} Shield Charge`, 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
     addRow('[G]', `${ABILITY_GLYPHS.bulwark} Bulwark`, 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
   } else {
-    addRow('[V]', `${ABILITY_GLYPHS.dash} Shadow Dash`, 'ready', 'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival', () => castShadowDash(), 'dash-row');
+    addRow('[V]', `${ABILITY_GLYPHS.dash} Shadow Dash`, 'ready', 'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade', () => castShadowDash(), 'dash-row');
     addRow('[B]', `${ABILITY_GLYPHS.vault} Vault`, 'ready', 'leap clean over an adjacent foe and land behind it — your strike on arrival is a backstab', () => castVault(), 'vault-row');
     addRow('—', 'Backstab', '×3', 'passive: 3× damage against foes that are unaware, stirring or frozen', null);
     addRow('—', 'Shadowstep', '·', 'passive: monsters notice you 2 tiles later; you sense hidden traps', null);
@@ -3198,7 +3256,7 @@ function toggleHelp() {
     cls.innerHTML = G.classId === 'mage'
       ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
-      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you beside a foe 2-3 tiles out, striking the unaware on arrival. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you BEHIND a foe up to 3 tiles out — even one beside you — and strikes as you land. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
       : G.classId === 'warrior'
       ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. Bulwark [G] plants your shield: until your next turn every hit is turned aside to 1 — spend the turn, soak the storm. You also passively BLOCK part of the first hit each turn (heavier armor, bigger block). You are the wall; make them come through you.'
       : '';
@@ -3627,7 +3685,7 @@ let joySuppressClick = false;
         'plant your shield: until your next turn every hit is turned aside to 1 damage');
     } else if (G.classId === 'rogue') {
       add(ABILITY_GLYPHS.dash, 'Shadow Dash', () => castShadowDash(), p => p.dashCd > 0 ? { txt: p.dashCd, cant: true } : null,
-        'melt to a tile beside a foe (2-3 tiles); the unaware eat your blade on arrival');
+        'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade');
       add(ABILITY_GLYPHS.vault, 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null,
         'leap clean over an adjacent foe \u2014 your strike on arrival is a backstab');
     }

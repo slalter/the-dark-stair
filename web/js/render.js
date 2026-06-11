@@ -828,6 +828,28 @@ function draw(t) {
   }
   ctx.globalAlpha = 1;
 
+  // ---- aim hints: faint corner brackets on the foe a READY ability would
+  // take (Hades-style 'subtle/discoverable' targeting — live whisper) ----
+  if (typeof aimHints === 'function' && G.state === 'PLAY') {
+    const pulse = 0.35 + 0.18 * Math.sin(t / 280);
+    for (const h of aimHints()) {
+      if (!G.visible.has(h.x + ',' + h.y)) continue;
+      const bx = h.x * CELL, by = h.y * CELL, L = 5;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = h.color;
+      ctx.lineWidth = 1.5;
+      for (const [cx2, cy2, sx2, sy2] of [[bx + 1, by + 1, 1, 1], [bx + CELL - 1, by + 1, -1, 1], [bx + 1, by + CELL - 1, 1, -1], [bx + CELL - 1, by + CELL - 1, -1, -1]]) {
+        ctx.beginPath();
+        ctx.moveTo(cx2 + sx2 * L, cy2);
+        ctx.lineTo(cx2, cy2);
+        ctx.lineTo(cx2, cy2 + sy2 * L);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   // ---- hover nameplate ----
   if (FX.hover && G.state === 'PLAY') {
     const { x: hx, y: hy } = FX.hover;

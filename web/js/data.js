@@ -99,7 +99,7 @@ const BOONS = {
   b_breaker:  { name: 'Charge Breaker',  desc: 'Shield Charge leaves its target reeling — it loses its next turn', w: 3, rarity: 'rare', cls: 'warrior', once: true },
   b_juggern:  { name: 'Juggernaut',      desc: 'Shield Charge reaches 6 tiles', w: 3, rarity: 'common', cls: 'warrior', once: true },
   b_fade:     { name: 'Vanishing Strike', desc: 'after Shadow Dash, foes within 2 tiles lose you for a beat — they stir', w: 3, rarity: 'rare', cls: 'rogue', once: true },
-  b_rhythm:   { name: 'Hunter\'s Rhythm', desc: 'backstab KILLS refund 6 turns of Shadow Dash', w: 3, rarity: 'common', cls: 'rogue', once: true },
+  b_rhythm:   { name: 'Hunter\'s Rhythm', desc: 'backstab KILLS fully refresh Shadow Dash', w: 3, rarity: 'common', cls: 'rogue', once: true },
   b_fork:     { name: 'Forked Flame',    desc: 'when your firebolt kills, it leaps to the nearest foe in sight at half power', w: 3, rarity: 'rare', cls: 'mage', once: true },
   b_frost:    { name: 'Deep Freeze',     desc: 'Frost Nova holds foes 5 turns, and the frozen take +2 from your blade', w: 3, rarity: 'common', cls: 'mage', once: true },
 };

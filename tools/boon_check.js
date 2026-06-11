@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -283,7 +283,7 @@ const TESTS = {
     g.applyBoon('b_rhythm'); p.dashCd = 10;
     const s = adjSpot(p); const m = g.spawnMonster('rat', s[0], s[1]); m.awake = false; m.hp = 1;
     g.attackMonster(m);
-    return p.dashCd === 4;
+    return p.dashCd === 0; // FULL refresh on a backstab kill (iter62)
   },
   b_fade(p) {
     g.applyBoon('b_fade'); p.dashCd = 0;
@@ -519,6 +519,32 @@ console.log('\n=== weapons with souls · rings · actives ===');
       check('post-vault strike is a x3 backstab', dealt >= 3 * (base - 1) && dealt <= 3 * (base + 2), `dealt ${dealt}, base ${base}`);
       check('the opened back closes after one strike', p.vaultStrike === 0, `vaultStrike ${p.vaultStrike}`);
     } }
+
+  // SHADOW DASH rework (iter62 live whispers): works at melee range,
+  // lands on the FAR side, and the dash IS the attack
+  p = fresh('rogue'); p.dashCd = 0; p.crit = 0;
+  { const spot = laneSpot(p, 2);
+    if (!spot) console.log('SKIP  dash rework — no clear lane on this map seed');
+    else {
+      const dx = Math.sign(spot[0] - p.x), dy = Math.sign(spot[1] - p.y);
+      const m = g.spawnMonster('golem', p.x + dx, p.y + dy); // ADJACENT
+      m.awake = true; m.hp = 500; m.def = 0;
+      G.visible.add(m.x + ',' + m.y);
+      const hp0 = m.hp, x0 = p.x, y0 = p.y;
+      g.castShadowDash();
+      check('dash works on an adjacent foe', p.x !== x0 || p.y !== y0, 'did not move');
+      check('dash strikes on arrival, same turn', m.hp < hp0, `hp ${m.hp} of ${hp0}`);
+      check('dash lands on the far side', g.dist2(p.x, p.y, x0, y0) > 2, `landed ${p.x},${p.y} from ${x0},${y0}`);
+      G.monsters.length = 0; }
+  }
+  // aim hints: a ready rogue dash brackets the nearest reachable foe
+  p = fresh('rogue'); p.dashCd = 0;
+  { const spot = adjSpot(p);
+    const m = g.spawnMonster('rat', spot[0], spot[1]); m.awake = true;
+    G.visible.add(m.x + ',' + m.y);
+    const hints = g.aimHints();
+    check('aim hint brackets the dash target', hints.length === 1 && hints[0].x === m.x && hints[0].y === m.y, JSON.stringify(hints));
+    G.monsters.length = 0; }
 
   // caster gear only falls for casters (iter58 loot truth)
   fresh('warrior');
