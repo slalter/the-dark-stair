@@ -244,10 +244,14 @@ function draw(t) {
   {
     const { vw, vh } = camView();
     // on phones the bottom ~25% of the screen is HUD + log, so the player
-    // rides above center — the boss fight should not happen behind buttons
+    // rides above center — the boss fight should not happen behind buttons.
+    // At the map's BOTTOM edge the old clamp won over the bias and fights
+    // sank into the button band (Maya r2 PARTIAL) — the camera may now
+    // overshoot into the void below the world to hold the line.
     const cy = MOBILE_UI ? 0.40 : 0.5;
+    const overshoot = MOBILE_UI ? vh * 0.25 : 0;
     const tx2 = clamp((p.rx + 0.5) * CELL - vw / 2, 0, Math.max(0, WORLD_W - vw));
-    const ty2 = clamp((p.ry + 0.5) * CELL - vh * cy, 0, Math.max(0, WORLD_H - vh));
+    const ty2 = clamp((p.ry + 0.5) * CELL - vh * cy, 0, Math.max(0, WORLD_H - vh + overshoot));
     if (CAM.snap) { CAM.x = tx2; CAM.y = ty2; CAM.snap = false; }
     else {
       CAM.x += (tx2 - CAM.x) * Math.min(1, dt60 * 7);
