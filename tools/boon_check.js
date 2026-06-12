@@ -632,6 +632,14 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
       Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
 
+  // EMBER SINKS (iter77, endgame menu #2): repeatable, daily-gated, source-pinned
+  { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('repeatable sinks never read as owned', src.includes('if (s.repeat) {'));
+    check('the cache is consumed inside the daily gate', /if \(!G\.daily\) \{\n    \/\/ Traveler's Cache/.test(src));
+    check('torch tally is a pure monument (no gameplay read)', !src.includes("arcaneTorches') || '0', 10) || 0;\n    G.player"));
+    const dsrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'data.js'), 'utf8');
+    check('both sinks are declared repeatable', dsrc.includes("s_torch") && dsrc.includes("s_cache") && (dsrc.match(/repeat: true/g) || []).length === 2); }
+
   // BLINK rework (iter75, user-approved): chosen tile, range 4, cost 6
   p = fresh('mage');
   { check('blink costs 6 base', g.spellCost(3) === 6, `cost ${g.spellCost(3)}`);

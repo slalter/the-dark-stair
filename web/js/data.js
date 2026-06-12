@@ -126,6 +126,9 @@ const SANCTUM = {
   s_lore:   { name: 'Keeper\'s Lore', desc: 'begin each floor knowing where the stairs lie', cost: 45, requires: 's_map' },
   s_purse2: { name: 'Estate', desc: 'the inheritance grows to 60 gold', cost: 60, requires: 's_purse' },
   s_stone2: { name: 'Anvil of the First Floor', desc: '+1 starting defense', cost: 70, requires: 's_stone' },
+  // the embers never go dead (endgame menu #2): two REPEATABLE sinks
+  s_torch:  { name: 'Kindle a Torch', desc: 'set one more flame against the dark — forever. A monument, nothing more.', cost: 10, repeat: true, counter: 'arcaneTorches' },
+  s_cache:  { name: 'Traveler\'s Cache', desc: 'bury a scroll for a future self — your next run starts with one more, once per purchase', cost: 30, repeat: true, counter: 'arcaneCache' },
 };
 
 const ELITE_MODS = {

@@ -350,6 +350,16 @@ function toggleBestiary(force) {
   if (bc) bc.textContent = `${known} of ${total}`;
 }
 
+/* the torch monument: every kindled flame shows on the title, forever */
+function updateTorchLine() {
+  const el = $('torch-line');
+  if (!el) return;
+  let n = 0;
+  try { n = parseInt(localStorage.getItem('arcaneTorches') || '0', 10) || 0; } catch (e) { /* ignore */ }
+  el.classList.toggle('hidden', n === 0);
+  if (n > 0) el.textContent = `${'🔥'.repeat(Math.min(n, 12))}${n > 12 ? ' …' : ''} — ${n} torch${n === 1 ? '' : 'es'} hold back the dark`;
+}
+
 function toggleSanctum(force) {
   sanctumOpen = force != null ? force : !sanctumOpen;
   const el = $('sanctum-screen');
@@ -359,6 +369,26 @@ function toggleSanctum(force) {
   const list = $('sanctum-list');
   list.innerHTML = '';
   for (const [id, s] of Object.entries(SANCTUM)) {
+    // repeatable sinks (endgame menu #2): never 'owned', tally shown forever
+    if (s.repeat) {
+      let n = 0;
+      try { n = parseInt(localStorage.getItem(s.counter) || '0', 10) || 0; } catch (e) { /* ignore */ }
+      const item = document.createElement('button');
+      item.className = 'sanctum-item';
+      item.innerHTML = `<div><div class="s-name">${s.name}${n > 0 ? ` <span style="color:var(--gold)">×${n}</span>` : ''}</div><div class="s-desc">${s.desc}</div></div>` +
+        `<div class="s-cost">${s.cost} ◈</div>`;
+      item.addEventListener('click', ev => {
+        ev.currentTarget.blur();
+        if (getEmbers() < s.cost) { Sfx.hit(); return; }
+        setEmbers(getEmbers() - s.cost);
+        try { localStorage.setItem(s.counter, String(n + 1)); } catch (e) { /* ignore */ }
+        Sfx.levelup();
+        if (id === 's_torch') updateTorchLine();
+        toggleSanctum(true);
+      });
+      list.appendChild(item);
+      continue;
+    }
     const owned = sanctumOwned(id);
     // the tree: deeper kindlings stay dark until their root is lit
     const locked = !owned && s.requires && !sanctumOwned(s.requires);
@@ -513,6 +543,16 @@ function newGame(classId) {
   }
   // sanctum gifts kindle every new run — except dailies, which stay a level field
   if (!G.daily) {
+    // Traveler's Cache: one buried scroll per purchase, consumed one per run
+    try {
+      const cache = parseInt(localStorage.getItem('arcaneCache') || '0', 10) || 0;
+      if (cache > 0) {
+        localStorage.setItem('arcaneCache', String(cache - 1));
+        const sc = RNG.pick(['scroll_fire', 'scroll_tele', 'scroll_map']);
+        addItem(sc);
+        addMsg(`A buried cache waits where you wake — ${ITEMS[sc].name} (${cache - 1} cache${cache - 1 === 1 ? '' : 's'} left).`, 'm-gold');
+      }
+    } catch (e) { /* ignore */ }
     if (sanctumOwned('s_flask')) addItem('potion_heal');
     if (sanctumOwned('s_flask2')) addItem('potion_vigor');
     if (sanctumOwned('s_map')) addItem('scroll_map');
@@ -3979,5 +4019,6 @@ let joySuppressClick = false;
   refresh();
 })();
 
+updateTorchLine();
 // title boot: the daily line carries today's date from the first paint
 (() => { const dl = $('daily-line'); if (dl) dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`; })();
