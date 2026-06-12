@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -615,6 +615,43 @@ console.log('\n=== weapons with souls · rings · actives ===');
 
   // every heavy truly rests after a whiff (Gruk parity)
   check('heavies rest after a whiff', String(g.monstersAct).includes('m.skipT = 1; // every heavy truly rests'));
+
+  // TEMPO pack (iter68, speedrunner audit 'Dash')
+  // ward sales pay gold but mint no SCORE
+  p = fresh('warrior');
+  { G.shop = [{ x: p.x + 1, y: p.y, id: 'w_sword', price: 35 }];
+    p.inventory.length = 0; p.inventory.push({ id: 'w_dagger', count: 1 });
+    const g0 = p.gold, e0 = G.goldEarned;
+    g.dropItem(0);
+    check('ward sale pays gold', p.gold > g0, `gold ${p.gold} from ${g0}`);
+    check('ward sale mints no score', G.goldEarned === e0, `goldEarned ${G.goldEarned} from ${e0}`);
+    G.shop = []; }
+
+  // the win bonus pays speed enough to compete (source-pinned curve)
+  check('win bonus rescaled for speed', /2500 - 2 \* G\.turn/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8')));
+
+  // dread clock: a barely-explored floor cannot starve the spawner, and
+  // hunter #3+ arrives as an ELITE (the cap made camping consequence-free)
+  p = fresh('warrior');
+  { G.clockSpawns = 2;
+    G.floorTurns = G.diff.dreadAt + 29; // ++ in afterPlayerTurn lands on the spawn beat
+    const n0 = G.monsters.length;
+    g.afterPlayerTurn();
+    const w = G.monsters[G.monsters.length - 1];
+    check('dread spawner survives an unexplored floor', G.monsters.length === n0 + 1, `monsters ${G.monsters.length} from ${n0}`);
+    if (G.monsters.length > n0) {
+      check('hunter #3 arrives as an elite', !!w.elite, `elite ${w.elite}`);
+      check('escalated hunters still carry no glory', w.xp === 0, `xp ${w.xp}`);
+    }
+    G.monsters.length = 0; G.floorTurns = 0; G.clockSpawns = 0; }
+
+  // the dark-stair shroud ticks down per turn and shrinks sleeper sight
+  p = fresh('warrior');
+  { G.shroudT = 5; G.monsters.length = 0;
+    g.afterPlayerTurn();
+    check('the shroud thins each turn', G.shroudT === 4, `shroudT ${G.shroudT}`);
+    check('the shroud dims sleeper sight (source)', String(g.monstersAct).includes('G.shroudT > 0 ? 3 : 0'));
+    G.shroudT = 0; }
 
   // caster gear only falls for casters (iter58 loot truth)
   fresh('warrior');

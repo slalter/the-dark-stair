@@ -402,7 +402,7 @@ const playerDodge = () => clamp(G.player.dodge + (hasBoon('b_fleet') ? 0.15 : 0)
 // score counts gold EARNED (spending costs nothing) plus a win bonus that decays with dawdling
 const score = () => Math.round(G.diff.scoreMult * (
   G.goldEarned + G.kills * 8 + (G.depth - 1) * 60 + G.bonusScore +
-  (G.state === 'WIN' ? 250 + Math.max(0, 1000 - G.turn) : 0)
+  (G.state === 'WIN' ? 250 + Math.max(0, 2500 - 2 * G.turn) : 0) // tempo audit: at 1000-flat, farming out-paid speed on every floor
 ));
 function earnGold(n) {
   n = Math.ceil(n * (1 + (hasBoon('b_purse') ? 0.3 : 0) + (hasBoon('b_greed') ? 0.6 : 0)));
@@ -479,6 +479,7 @@ function startLevel(depth) {
   G.floorTurns = 0;
   G.floorDmg = 0;
   G.clockSpawns = 0;
+  G.shroudT = 0; // the dark-stair shroud never outlives its floor
   G.shrineArmed = {};
   // daily floors must not depend on how the player fought — reseed deterministically per floor
   if (G.daily) RNG.seed((G.dailyBase != null ? G.dailyBase : dailySeed(G.classId)) ^ (depth * 0x9E3779B9));
@@ -573,11 +574,26 @@ function startLevel(depth) {
   }
 
   // ground items + gold
+  // the dark stair's REWARD now lands where you do (tempo audit: 3/3
+  // dark-stair runs died ~120 turns after landing; the +2 loot existed but
+    // was scattered): a shroud conceals your arrival, and one spoil glints
+  // beside you.
+  if (dark) {
+    G.shroudT = 15;
+    addMsg('The dark swallows your arrival — tread quickly while it lasts.', 'm-magic');
+  }
   const itemPool = itemPoolForDepth(depth);
   const nItems = 3 + RNG.int(0, 2) + (theme.lootMod || 0) + (dark ? 2 : 0);
   for (let i = 0; i < nItems; i++) {
     const spot = randomFloor(map, s => cheb(s.x, s.y, G.player.x, G.player.y) > 3);
     if (spot) G.items.push({ x: spot.x, y: spot.y, id: RNG.weighted(itemPool) });
+  }
+  if (dark) {
+    const near = randomFloor(map, sp2 => cheb(sp2.x, sp2.y, G.player.x, G.player.y) <= 3 && (sp2.x !== G.player.x || sp2.y !== G.player.y));
+    if (near) {
+      G.items.push({ x: near.x, y: near.y, id: RNG.weighted(itemPool) });
+      addMsg('The dark pays its toll-takers — something glints close by.', 'm-gold');
+    }
   }
   const nGold = RNG.int(2, 3);
   for (let i = 0; i < nGold; i++) {
@@ -848,23 +864,46 @@ function afterPlayerTurn() {
   if (p.vaultCd > 0) p.vaultCd--;
   if (p.guardT > 0) p.guardT--; // the planted shield lowers after the foes' reply
   if (p.vaultStrike > 0) p.vaultStrike--; // the opened back closes fast
+  if (G.shroudT > 0) { G.shroudT--; if (G.shroudT === 0) addMsg('The dark-stair shroud thins away.', 'm-dim'); }
   // the dread clock: linger too long and the dark sends MELEE hunters (capped, worthless XP)
   const dreadAt = G.diff.dreadAt - dreadShift();
   if (G.floorTurns === dreadAt - 29) addMsg('The shadows lean closer. Best not linger.', 'm-dim');
-  if (G.depth !== FINAL_DEPTH && G.clockSpawns < 2 && G.floorTurns > dreadAt && (G.floorTurns - dreadAt) % 30 === 0) {
+  if (G.depth !== FINAL_DEPTH && G.floorTurns > dreadAt && (G.floorTurns - dreadAt) % 30 === 0) {
+    // tempo audit closed two holes here: (1) an unexplored start room
+    // STARVED the spawner forever (it required an explored tile >8 away,
+    // and the fizzle was silent) — the search now relaxes to >4 and then
+    // to the unexplored frontier; (2) the 2-hunter cap made camping
+    // consequence-free — the cap is gone, and from the third hunter on
+    // the dark sends ELITES. Still 0 xp: there is nothing to farm.
     let far = null, fd = -1;
-    for (let y = 0; y < G.map.h; y++) for (let x = 0; x < G.map.w; x++) {
-      const i = G.map.idx(x, y);
-      if (!G.map.explored[i] || !tileWalkable(G.map.tiles[i]) || monsterAt(x, y)) continue;
-      const d = dist2(x, y, p.x, p.y);
-      if (d > fd && d > 64) { fd = d; far = { x, y }; }
+    for (const minD2 of [64, 16]) {
+      for (let y = 0; y < G.map.h && !far; y++) for (let x = 0; x < G.map.w; x++) {
+        const i = G.map.idx(x, y);
+        if (!G.map.explored[i] || !tileWalkable(G.map.tiles[i]) || monsterAt(x, y)) continue;
+        const d = dist2(x, y, p.x, p.y);
+        if (d > fd && d > minD2) { fd = d; far = { x, y }; }
+      }
+      if (far) break;
+    }
+    if (!far) {
+      // frontier fallback: a walkable unexplored tile touching the explored edge
+      for (let y = 1; y < G.map.h - 1; y++) for (let x = 1; x < G.map.w - 1; x++) {
+        const i = G.map.idx(x, y);
+        if (G.map.explored[i] || !tileWalkable(G.map.tiles[i]) || monsterAt(x, y)) continue;
+        let touches = false;
+        for (const [dx, dy] of DIRS8) if (G.map.inBounds(x + dx, y + dy) && G.map.explored[G.map.idx(x + dx, y + dy)]) { touches = true; break; }
+        if (!touches) continue;
+        const d = dist2(x, y, p.x, p.y);
+        if (d > fd && d > 9) { fd = d; far = { x, y }; }
+      }
     }
     if (far) {
       const w = spawnMonster(G.depth >= 4 ? 'troll' : 'orc', far.x, far.y);
       w.awake = true;
       w.xp = 0; // hunters carry no glory — there is nothing to farm here
       G.clockSpawns++;
-      addMsg('Something in the dark has caught your scent.', 'm-bad');
+      if (G.clockSpawns > 2) { makeElite(w, false); w.xp = 0; }
+      addMsg(G.clockSpawns > 2 ? 'The dark is done waiting — something WORSE has your scent.' : 'Something in the dark has caught your scent.', 'm-bad');
     }
   }
   // poison ticks
@@ -1417,7 +1456,7 @@ function castCharge() {
   if (G.state !== 'PLAY') return;
   cancelTravel();
   const p = G.player;
-  if (p.chargeCd > 0) { addMsg(`Shield Charge needs ${p.chargeCd} more turns.`, 'm-dim'); return; }
+  if (p.chargeCd > 0) { addMsg(`Shield Charge needs ${p.chargeCd} more turns.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.chargeCd}`, '#9a91b8'); return; }
   // nearest visible foe on an aligned, clear, corner-open line within 4
   let pick = null, pd = 1e9;
   for (const m of G.monsters) {
@@ -1462,7 +1501,7 @@ function castCharge() {
 function castBulwark() {
   if (G.state !== 'PLAY') return;
   const p = G.player;
-  if (p.guardCd > 0) { addMsg(`Your shield arm recovers in ${p.guardCd} ${p.guardCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); return; }
+  if (p.guardCd > 0) { addMsg(`Your shield arm recovers in ${p.guardCd} ${p.guardCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.guardCd}`, '#9a91b8'); return; }
   cancelTravel();
   p.guardT = 1;
   p.guardCd = 12 - tempoEdge();
@@ -1482,7 +1521,7 @@ function castBulwark() {
 function castVault() {
   if (G.state !== 'PLAY') return;
   const p = G.player;
-  if (p.vaultCd > 0) { addMsg(`Vault recovers in ${p.vaultCd} ${p.vaultCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); return; }
+  if (p.vaultCd > 0) { addMsg(`Vault recovers in ${p.vaultCd} ${p.vaultCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.vaultCd}`, '#9a78b8'); return; }
   // candidate: adjacent monster with a free tile straight beyond it;
   // prefer the landing spot with the fewest foes breathing on it
   let best = null, bestCrowd = 99, sawFoe = false;
@@ -1588,7 +1627,7 @@ function castShadowDash() {
   if (G.state !== 'PLAY') return;
   cancelTravel();
   const p = G.player;
-  if (p.dashCd > 0) { addMsg(`Shadow Dash needs ${p.dashCd} more turns.`, 'm-dim'); return; }
+  if (p.dashCd > 0) { addMsg(`Shadow Dash needs ${p.dashCd} more turns.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.dashCd}`, '#9a91b8'); return; }
   // hover target first, else nearest visible foe within 3
   let target = null;
   // range 1-3: at melee range the dash slips AROUND the foe (live whisper:
@@ -1750,7 +1789,7 @@ function castCleave() {
   if (G.state !== 'PLAY') return;
   cancelTravel();
   const p = G.player;
-  if (p.cleaveCd > 0) { addMsg(`Cleave needs ${p.cleaveCd} more turns.`, 'm-dim'); return; }
+  if (p.cleaveCd > 0) { addMsg(`Cleave needs ${p.cleaveCd} more turns.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.cleaveCd}`, '#9a91b8'); return; }
   const targets = G.monsters.filter(m => cheb(m.x, m.y, p.x, p.y) <= 1);
   if (!targets.length) { addMsg('You sweep your blade through empty air.', 'm-dim'); return; }
   p.cleaveCd = (hasBoon('b_cleave') ? 5 : 10) - tempoEdge();
@@ -1793,7 +1832,7 @@ function dropItem(index) {
     const pay = Math.max(1, Math.floor((def.price ? def.price(1) : 4) / 2));
     entry.count--;
     if (entry.count <= 0) inv.splice(index, 1);
-    earnGold(pay);
+    G.player.gold += pay; // gold, not goldEarned: sales must not mint SCORE (tempo audit: +52 score in 3 sells)
     G.purchases++; // dealing is dealing — selling breaks the 'No deal with merchants' conduct
     addMsg(`The shop ward hums and swallows the ${def.name} — ${pay} gold appears in your purse.`, 'm-gold');
     Sfx.buy();
@@ -2118,7 +2157,7 @@ function monstersAct() {
     }
 
     if (!m.awake) {
-      const sight = Math.max(2, m.sight - (G.classDef.sneak || 0) - (hasBoon('b_ghost') ? 1 : 0));
+      const sight = Math.max(2, m.sight - (G.classDef.sneak || 0) - (hasBoon('b_ghost') ? 1 : 0) - (G.shroudT > 0 ? 3 : 0));
       // stealth: a sneak-class player can actually close the gap — sleepers
       // only stir by chance, scaling with proximity. Everyone else (and any
       // boss/mini set piece) wakes the moment they'd spot you, as before.
@@ -2919,7 +2958,7 @@ function saveRun() {
       lichSaid: G.lichSaid, echo: G.echo, darkNext: !!G.darkNext, dailyBase: G.dailyBase,
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
-      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed,
+      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -2958,6 +2997,7 @@ function loadRun() {
   G.wareWarn = s.wareWarn || {};
   G.shopSeen = !!s.shopSeen;
   G.darkUsed = !!s.darkUsed;
+  G.shroudT = s.shroudT || 0;
   G.player = s.player; G.monsters = s.monsters; G.items = s.items;
   G.shop = s.shop || []; G.decals = s.decals || [];
   const m = new GameMap(s.map.depth);
@@ -3427,6 +3467,17 @@ window.addEventListener('keydown', ev => {
   if (key === 'o') { autoExplore(); return; }
   if (MOVE_KEYS[key] && !ev.shiftKey) { tryMove(...MOVE_KEYS[key]); return; }
   if (key === ' ' || key === '.') { addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); return; }
+  if ((key === 'enter' || ev.key === '>') && ev.shiftKey && G.state === 'PLAY' && !G.darkUsed) {
+    // a speedrunner's key: route straight to the known dark stair
+    let dx2 = -1, dy2 = -1;
+    for (let y2 = 0; y2 < G.map.h && dx2 < 0; y2++) for (let x2 = 0; x2 < G.map.w; x2++) {
+      const i2 = G.map.idx(x2, y2);
+      if (G.map.explored[i2] && G.map.tiles[i2] === T.DARKSTAIRS) { dx2 = x2; dy2 = y2; break; }
+    }
+    if (dx2 >= 0) { addMsg('You make for the DARK stair.', 'm-bad'); startTravelTo(dx2, dy2); }
+    else addMsg('No dark stair found yet on this floor.', 'm-dim');
+    return;
+  }
   if (key === 'enter' || ev.key === '>') {
     const hereTile = G.map.get(G.player.x, G.player.y);
     if (hereTile === T.DARKSTAIRS && G.state === 'PLAY') {
