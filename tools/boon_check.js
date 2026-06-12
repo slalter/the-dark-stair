@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -545,6 +545,36 @@ console.log('\n=== weapons with souls · rings · actives ===');
     const hints = g.aimHints();
     check('aim hint brackets the dash target', hints.length === 1 && hints[0].x === m.x && hints[0].y === m.y, JSON.stringify(hints));
     G.monsters.length = 0; }
+
+  // DETECTION rework (iter63, stealth audit 'Warden'):
+  // knife-range notice is CERTAIN for the rogue — no more stare-downs
+  p = fresh('rogue');
+  { const spot = adjSpot(p);
+    const m = g.spawnMonster('rat', spot[0], spot[1]); m.awake = false; m.stirring = false;
+    G.visible.add(m.x + ',' + m.y); G.visible.add(p.x + ',' + p.y);
+    g.monstersAct();
+    check('knife-range notice is certain', m.awake === true, `awake ${m.awake}`);
+    // notice -> stir -> act: the wake turn costs the monster its action
+    check('the woken monster stirs before it acts', m.stirring === true && G.player.hp === G.player.maxHp,
+      `stirring ${m.stirring} hp ${G.player.hp}/${G.player.maxHp}`);
+    g.monstersAct();
+    check('the stir beat passes after one round', m.stirring === false, `stirring ${m.stirring}`);
+    G.monsters.length = 0; }
+
+  // the cry is stopped by stone: scan the map for an open-wall-open pinch
+  fresh('warrior');
+  { let blocked = null, open = null;
+    for (let y = 1; y < G.map.h - 1 && (!blocked || !open); y++) for (let x = 1; x < G.map.w - 1; x++) {
+      if (!blocked && G.map.walkable(x - 1, y) && G.map.opaque(x, y) && G.map.walkable(x + 1, y)) blocked = [x - 1, y, x + 1, y];
+      if (!open && G.map.walkable(x - 1, y) && G.map.walkable(x, y) && G.map.walkable(x + 1, y)) open = [x - 1, y, x + 1, y];
+    }
+    if (blocked) check('a wall stops the cry', g.cryReaches(...blocked) === false, blocked.join(','));
+    else console.log('SKIP  wall-stops-cry — no open-wall-open pinch on this seed');
+    if (open) check('an open line carries the cry', g.cryReaches(...open) === true, open.join(','));
+    else console.log('SKIP  open-line-cry — no 3-wide corridor on this seed'); }
+
+  // every heavy truly rests after a whiff (Gruk parity)
+  check('heavies rest after a whiff', String(g.monstersAct).includes('m.skipT = 1; // every heavy truly rests'));
 
   // caster gear only falls for casters (iter58 loot truth)
   fresh('warrior');

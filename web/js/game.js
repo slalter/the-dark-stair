@@ -937,11 +937,14 @@ function attackMonster(m, bonus = 0) {
       addMsg('The rhythm holds — the shadows open for you AGAIN.', 'm-gold');
     }
     if (m.hp > 0) {
-      // a botched assassination is loud
+      // a botched assassination is loud — but stone muffles it, and the
+      // woken get their '?' beat like every other wake (stealth audit)
       let woke = 0;
       for (const o of G.monsters) {
         if (o === m || o.awake || o.boss) continue;
-        if (cheb(o.x, o.y, m.x, m.y) <= 2) { o.awake = true; woke++; }
+        if (cheb(o.x, o.y, m.x, m.y) <= 2 && cryReaches(m.x, m.y, o.x, o.y)) {
+          o.awake = true; o.stirring = true; o.justWoke = true; woke++;
+        }
       }
       addMsg(woke ? `${TheM(m)} shrieks — the dark stirs around you!`
                   : `${TheM(m)} shrieks and rounds on you!`, 'm-bad');
@@ -1966,6 +1969,18 @@ function resolveShells() {
 }
 
 /* ---------- monster AI ---------- */
+/* sound is stopped by stone: a notice-cry or death-scream only carries to
+   sleepers with an open line — walls protect (stealth audit: Gruk woke
+   through a wall via a chain at eucl 5.4) */
+function cryReaches(x1, y1, x2, y2) {
+  const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) * 2;
+  for (let st = 1; st < steps; st++) {
+    const t = st / steps;
+    if (G.map.opaque(Math.round(x1 + (x2 - x1) * t), Math.round(y1 + (y2 - y1) * t))) return false;
+  }
+  return true;
+}
+
 function monstersAct() {
   const p = G.player;
   resolveShells();
@@ -1973,7 +1988,9 @@ function monstersAct() {
   for (const m of [...G.monsters]) {
     if (!G.monsters.includes(m)) continue;
     if (m.frozen > 0) { m.frozen--; m.windup = 0; m.beam = null; m.lane = null; continue; }
+    if (m.justWoke) { m.justWoke = false; continue; } // the stir beat: woken this round, acts next
     if (m.skipT > 0) { m.skipT--; if (m.skipT === 0) m.stirring = false; continue; }
+    if (m.stirring) m.stirring = false; // the '?' beat has passed — it acts now
     if (m.slow) { m.slowTick = !m.slowTick; if (!m.slowTick) continue; } // ponderous: acts every other turn
     if (m.regen && m.hp < m.maxHp) m.hp++;
     if (m.cd > 0) m.cd--;
@@ -2037,7 +2054,8 @@ function monstersAct() {
       } else {
         addMsg(`${TheM(m)}'s blow shatters stone where you stood.`, 'm-good');
         spawnBurst(m.windupX, m.windupY, '#8a8aa0', 8, 60);
-        if (m.mini) { m.skipT = 1; addMsg('The axe is buried in the stone!', 'm-gold'); }
+        m.skipT = 1; // every heavy truly rests after a whiff — the dodge earns a free turn
+        if (m.mini) addMsg('The axe is buried in the stone!', 'm-gold');
       }
       continue;
     }
@@ -2087,14 +2105,18 @@ function monstersAct() {
       // only stir by chance, scaling with proximity. Everyone else (and any
       // boss/mini set piece) wakes the moment they'd spot you, as before.
       let wakes = seen && d <= sight;
-      if (wakes && (G.classDef.sneak || 0) > 0 && !m.boss && !m.mini) {
-        let wakeCh = d <= 1.5 ? 0.3 : d <= 3 ? 0.15 : 0.05;
+      // stealth audit: the all-dice gate made point-blank stare-downs routine
+      // (4-6 turns beside a dozing goblin) while the sight boundary almost
+      // never fired. Knife range (d<=2) is now CERTAIN; the dice only govern
+      // the 2..sight band — Shadowstep still buys the approach.
+      if (wakes && (G.classDef.sneak || 0) > 0 && !m.boss && !m.mini && d > 2) {
+        let wakeCh = d <= 3 ? 0.15 : 0.05;
         if (hasBoon('b_ghost')) wakeCh *= 0.5;
         wakes = RNG.chance(wakeCh);
       }
       if (wakes) {
         m.awake = true;
-        if (!m.boss && !m.mini) { m.skipT = Math.max(m.skipT, 1); m.stirring = true; }
+        if (!m.boss && !m.mini) m.stirring = true; // '?' shows through the player's turn
         if (m.mini) GrukVoice.say('notice');
         addMsg(m.boss ? '“ANOTHER MORSEL CRAWLS INTO MY TOMB.”'
           : m.mini ? 'Gruk the Warlord roars a challenge!'
@@ -2105,9 +2127,13 @@ function monstersAct() {
         let woke = 0;
         for (const o of G.monsters) {
           if (o === m || o.awake || o.boss) continue;
-          if (cheb(o.x, o.y, m.x, m.y) <= 2) { o.awake = true; o.skipT = Math.max(o.skipT, 1); o.stirring = true; woke++; }
+          if (cheb(o.x, o.y, m.x, m.y) <= 2 && cryReaches(m.x, m.y, o.x, o.y)) {
+            o.awake = true; o.stirring = true; o.justWoke = true; woke++;
+          }
         }
         if (woke > 0) addMsg('Its cry wakes the dark around you!', 'm-bad');
+        // the noticer itself: notice -> '?' beat -> act (was acting same turn)
+        if (!m.boss && !m.mini) continue;
       } else {
         if (RNG.chance(0.25)) wander(m);
         continue;
@@ -2299,7 +2325,8 @@ function monstersAct() {
     // Gruk is leashed to his post: stray too far and he stomps back, letting
     // runners escape — but while he can SEE you, he commits to the kill
     // (standing 8 tiles out used to bounce him between leash and chase forever)
-    if (m.mini && !seen && G.stairsPos && cheb(m.x, m.y, G.stairsPos.x, G.stairsPos.y) > 6) {
+    const leashD = (m.mini && G.stairsPos) ? cheb(m.x, m.y, G.stairsPos.x, G.stairsPos.y) : 0;
+    if (m.mini && !seen && G.stairsPos && (leashD > 6 || (m.leashed && leashD > 4))) {
       const back = computeDistField(G.map, G.stairsPos.x, G.stairsPos.y, 60);
       let bb = null, bbd = back[G.map.idx(m.x, m.y)];
       if (bbd === -1) bbd = 9999;
