@@ -1344,8 +1344,13 @@ function winGame() {
   clearSave();
   mergeBestiary();
   G.state = 'WIN';
-  if (G.potionsDrunk === 0) { G.bonusScore += 150; addMsg('CONDUCT: Abstinent — not one potion drunk. +150 score.', 'm-gold'); }
-  if (G.purchases === 0) { G.bonusScore += 100; addMsg('CONDUCT: No deal with merchants. +100 score.', 'm-gold'); }
+  // conducts: scored AND recorded as badges per class+difficulty (menu #3 —
+  // the completionist audit: 'fired invisibly at win time, recorded nowhere')
+  const earned = [];
+  if (G.potionsDrunk === 0) { G.bonusScore += 150; addMsg('CONDUCT: Abstinent — not one potion drunk. +150 score.', 'm-gold'); earned.push('abstinent'); }
+  if (G.purchases === 0) { G.bonusScore += 100; addMsg('CONDUCT: No deal with merchants. +100 score.', 'm-gold'); earned.push('nodeal'); }
+  if (G.darkUsed) { G.bonusScore += 75; addMsg('CONDUCT: Darkstrider — you dared the dark stair and lived to win. +75 score.', 'm-gold'); earned.push('darkstrider'); }
+  if (earned.length && !G.daily) recordConducts(earned);
   if (window.GuruTelemetry) GuruTelemetry.win({
     depth: G.depth, turn: G.turn, kills: G.kills, gold_earned: G.goldEarned,
     score: score(), class_id: G.classId, difficulty: G.diffId, daily: G.daily,
@@ -3182,6 +3187,38 @@ function loadRun() {
   addMsg(`You shake off the dark dream and press on — floor ${G.depth}.`, 'm-magic');
   return true;
 }
+/* conduct badges (endgame menu #3): per-class, per-difficulty win records */
+const CONDUCT_NAMES = { abstinent: 'Abstinent', nodeal: 'No Deal', darkstrider: 'Darkstrider' };
+function recordConducts(ids) {
+  try {
+    const led = JSON.parse(localStorage.getItem('arcaneConducts') || '{}') || {};
+    const key = `${G.classId}_${G.diffId}`;
+    for (const id of ids) {
+      led[id] = led[id] || {};
+      led[id][key] = (led[id][key] || 0) + 1;
+    }
+    localStorage.setItem('arcaneConducts', JSON.stringify(led));
+  } catch (e) { /* ignore */ }
+  updateConductLine();
+}
+function updateConductLine() {
+  const el = $('conduct-line');
+  if (!el) return;
+  let led = {};
+  try { led = JSON.parse(localStorage.getItem('arcaneConducts') || '{}') || {}; } catch (e) { /* ignore */ }
+  const bits = [];
+  for (const [id, name] of Object.entries(CONDUCT_NAMES)) {
+    const per = led[id] || {};
+    const total = Object.values(per).reduce((a2, b2) => a2 + b2, 0);
+    if (total > 0) {
+      const detail = Object.entries(per).map(([k, n]) => `${k.replace('_', '/')} ×${n}`).join(', ');
+      bits.push(`<span title="${detail}">⚜ ${name} ×${total}</span>`);
+    }
+  }
+  el.classList.toggle('hidden', bits.length === 0);
+  el.innerHTML = bits.length ? 'conducts won: ' + bits.join(' · ') : '';
+}
+
 function updateContinueLine() {
   const s = peekSave();
   const el = $('continue-line');
@@ -4020,5 +4057,6 @@ let joySuppressClick = false;
 })();
 
 updateTorchLine();
+updateConductLine();
 // title boot: the daily line carries today's date from the first paint
 (() => { const dl = $('daily-line'); if (dl) dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`; })();

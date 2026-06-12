@@ -632,6 +632,12 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
       Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
 
+  // CONDUCT BADGES (iter78, endgame menu #3): recorded on win, daily-gated
+  { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('conducts record on win, never in dailies', src.includes('if (earned.length && !G.daily) recordConducts(earned)'));
+    check('darkstrider conduct exists and pays', src.includes("CONDUCT: Darkstrider") && src.includes('G.bonusScore += 75'));
+    check('badges key per class and difficulty', src.includes('`${G.classId}_${G.diffId}`')); }
+
   // EMBER SINKS (iter77, endgame menu #2): repeatable, daily-gated, source-pinned
   { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
     check('repeatable sinks never read as owned', src.includes('if (s.repeat) {'));
