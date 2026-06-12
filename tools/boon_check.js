@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -179,7 +179,7 @@ const TESTS = {
   b_ghost(p) { const d0 = g.playerDodge(); g.applyBoon('b_ghost'); return g.playerDodge() > d0 + 0.05; },
   b_thrift(p) {
     g.applyBoon('b_thrift');
-    return g.spellCost(0) === 4 && g.spellCost(1) === 7 && g.spellCost(3) === 3;
+    return g.spellCost(0) === 4 && g.spellCost(1) === 7 && g.spellCost(3) === 5; // blink base 6 since iter75
   },
   b_overchannel(p) {
     g.applyBoon('b_overchannel');
@@ -620,6 +620,25 @@ console.log('\n=== weapons with souls · rings · actives ===');
 
   // every heavy truly rests after a whiff (Gruk parity)
   check('heavies rest after a whiff', String(g.monstersAct).includes('m.skipT = 1; // every heavy truly rests'));
+
+  // BLINK rework (iter75, user-approved): chosen tile, range 4, cost 6
+  p = fresh('mage');
+  { check('blink costs 6 base', g.spellCost(3) === 6, `cost ${g.spellCost(3)}`);
+    // hover-targeted: lands exactly where chosen within range
+    const spot = laneSpot(p, 3);
+    if (!spot) console.log('SKIP  blink-target — no 3-lane on this seed');
+    else {
+      G.visible.add(spot[0] + ',' + spot[1]);
+      for (let s2 = 1; s2 <= 3; s2++) G.visible.add((p.x + Math.sign(spot[0]-p.x)*s2) + ',' + (p.y + Math.sign(spot[1]-p.y)*s2));
+      p.mana = 20;
+      g.FX.hover = { x: spot[0], y: spot[1] };
+      g.castSpell(3);
+      check('blink lands on the chosen tile', p.x === spot[0] && p.y === spot[1], `at ${p.x},${p.y} want ${spot[0]},${spot[1]}`);
+      check('blink spent 6 mana (then +1 turn regen)', p.mana === 15, `mana ${p.mana}`);
+      g.FX.hover = null;
+    }
+    // range gate: 16 = dist2 cap (range 4) pinned in source
+    check('blink range capped at 4 (source)', String(g.castSpell).includes('dist2(x, y, p.x, p.y) <= 16')); }
 
   // META audit (iter72, completionist 'Vera'):
   { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');

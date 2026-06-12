@@ -57,7 +57,7 @@ const SPELLS = [
   { key: 'F', name: 'Firebolt', cost: 5, desc: 'sears the nearest visible foe — full power within 3 tiles, weaker beyond' },
   { key: 'G', name: 'Frost Nova', cost: 8, desc: 'freezes all foes within 2 tiles' },
   { key: 'H', name: 'Mend', cost: 6, desc: 'knits your wounds' },
-  { key: 'V', name: 'Blink', cost: 4, desc: 'step through space to a visible tile (≤5)' },
+  { key: 'V', name: 'Blink', cost: 6, desc: 'step through space to a CHOSEN visible tile (≤4)' },
 ];
 
 /* ---------- boons: between-floor gifts that define a build ---------- */

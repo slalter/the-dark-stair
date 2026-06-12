@@ -1792,11 +1792,13 @@ function castSpell(i) {
     Sfx.mend();
     spawnFloater(p.x, p.y, `+${heal}`, '#7ee0a3');
     addMsg(`Soft light knits your wounds. +${heal} HP.`, 'm-good');
-  } else { // Blink — step through space to a visible tile within 5
+  } else { // Blink — step through space to a CHOSEN visible tile within 4
+    // (user-approved rework: the spell was already hover-targeted — only the
+    // copy still said 'wild' — so the trade lands as range 5→4, cost 4→6)
     let spot = null;
     const valid = (x, y) => G.map.inBounds(x, y) && G.visible.has(x + ',' + y) &&
       G.map.walkable(x, y) && !monsterAt(x, y) && (x !== p.x || y !== p.y) &&
-      dist2(x, y, p.x, p.y) <= 25;
+      dist2(x, y, p.x, p.y) <= 16;
     const noWare = (x, y) => !G.shop.some(s => s.x === x && s.y === y);
     if (FX.hover && valid(FX.hover.x, FX.hover.y) && noWare(FX.hover.x, FX.hover.y)) spot = { x: FX.hover.x, y: FX.hover.y };
     else {
@@ -3421,7 +3423,7 @@ function toggleHelp() {
   const cls = $('help-class-block');
   if (opening && cls) {
     cls.innerHTML = G.classId === 'mage'
-      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] jumps up to 5 tiles, wild. Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
+      ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] steps you to a tile YOU choose (hover/tap it first, ≤4). Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
       ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you BEHIND a foe up to 3 tiles out — even one beside you — and strikes as you land. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
       : G.classId === 'warrior'
@@ -3436,7 +3438,7 @@ function printHelp() {
   addMsg('1–0 use items (Shift+digit or right-click to drop) · V/B abilities · X zoom · Esc pause · ? help.', 'm-dim');
   if (G.classId === 'mage') {
     addMsg('Spellcraft: firebolt flies 3/turn at the nearest foe — fast movers can dodge it; point-blank never misses.', 'm-dim');
-    addMsg('Nova freezes 2 tiles around you for ~3 turns · Blink jumps ≤5 tiles (wild) · kills siphon +2 mana · ⚔ Attack powers spells too.', 'm-dim');
+    addMsg('Nova freezes 2 tiles around you for ~3 turns · Blink steps to your chosen tile (≤4) · kills siphon +2 mana · ⚔ Attack powers spells too.', 'm-dim');
   }
 }
 
