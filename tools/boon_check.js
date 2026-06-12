@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem, castMirrorStance, parryRiposte };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -860,7 +860,9 @@ console.log('\n=== weapons with souls · rings · actives ===');
         check('the player is untouched while the shambler tanks', p.hp === hp0, `hp ${p.hp}/${hp0}`);
       } else console.log('SKIP  bodyguard — no clear flank tile');
 
-      // swap: your own dead make way
+      // swap: your own dead make way (clean field: stray survivors of the
+      // bodyguard stage were intercepting the bump or mauling the rites)
+      G.monsters.length = 0; G.monsters.push(pet);
       if (G.monsters.includes(pet)) {
         pet.x = p.x + 1; pet.y = p.y;
         if (G.map.walkable(pet.x, pet.y)) {
@@ -872,6 +874,7 @@ console.log('\n=== weapons with souls · rings · actives ===');
     }
 
     // last rites: a corpse at your feet feeds your wounds
+    G.monsters.length = 0;
     const rat2 = g.spawnMonster('rat', p.x, p.y - 1) || null;
     if (rat2) { rat2.hp = 1; g.attackMonster(rat2); }
     const c2 = G.corpses[G.corpses.length - 1];
@@ -889,6 +892,83 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('corpses tick down each turn', G.corpses.length === 0 || G.corpses[0].turns === 1, JSON.stringify(G.corpses[0] || null));
     g.afterPlayerTurn();
     check('a spent corpse is dust', G.corpses.every(c3 => c3.turns > 0), `left ${G.corpses.length}`); }
+
+  // MIRRORBLADE (iter83, endgame menu #4 pick C): steel answers steel
+  p = fresh('mirrorblade');
+  { G.monsters.length = 0;
+    const s = adjSpot(p); const gob = g.spawnMonster('goblin', s[0], s[1]);
+    gob.awake = true; gob.stirring = false; gob.justWoke = false; gob.hp = 99; gob.maxHp = 99; gob.def = 0;
+    p.hp = p.maxHp; p.dodge = -9; // any swing would land — only the mirror stands between
+    g.castMirrorStance(); // the goblin's reply meets the mirror inside this turn
+    check('the parry turns the blow to NOTHING', p.hp === p.maxHp, `hp ${p.hp}/${p.maxHp}`);
+    check('the riposte answers for double', 99 - gob.hp >= 2 * g.playerAtk() - 1, `dealt ${99 - gob.hp}, atk ${g.playerAtk()}`);
+    check('the stance is consumed by the parry', p.stanceT === 0);
+    check('a true parry resets the wrists (chain reward)', p.stanceCd === 0, `cd ${p.stanceCd}`);
+    check('a parried species is a solved species', G.reads && G.reads.goblin === 1, JSON.stringify(G.reads));
+    // Perfect Read pays on every ordinary swing: 30 swings vs an unread twin
+    const gob2 = g.spawnMonster('goblin', s[0], s[1] === p.y ? s[1] : s[1]);
+    gob2.hp = 9999; gob2.maxHp = 9999; gob2.def = 0; gob2.awake = true;
+    p.crit = 0;
+    let dealtRead = 0;
+    for (let i = 0; i < 30; i++) { const h0 = gob2.hp; g.attackMonster(gob2); dealtRead += h0 - gob2.hp; }
+    delete G.reads.goblin;
+    let dealtBlind = 0;
+    for (let i = 0; i < 30; i++) { const h0 = gob2.hp; g.attackMonster(gob2); dealtBlind += h0 - gob2.hp; }
+    check('Perfect Read pays +2 a swing', dealtRead - dealtBlind >= 40, `read ${dealtRead} blind ${dealtBlind}`);
+    G.monsters.length = 0; }
+
+  // the wound-up heavy blow is parryable — the telegraph was the invitation
+  p = fresh('mirrorblade');
+  { G.monsters.length = 0;
+    const s = adjSpot(p); const troll = g.spawnMonster('troll', s[0], s[1]);
+    troll.awake = true; troll.stirring = false; troll.justWoke = false; troll.hp = 200; troll.maxHp = 200;
+    troll.windup = 1; troll.windupX = p.x; troll.windupY = p.y;
+    p.hp = p.maxHp; p.dodge = -9;
+    g.castMirrorStance();
+    check('the wound-up blow meets the mirror', p.hp === p.maxHp && troll.hp < 200, `hp ${p.hp}/${p.maxHp} troll ${troll.hp}`);
+    G.monsters.length = 0; }
+
+  // a galloping charge is NOT a sword — the mirror ignores it (and vice versa)
+  p = fresh('mirrorblade');
+  { G.monsters.length = 0;
+    const s = adjSpot(p);
+    const boar = g.spawnMonster('charger', s[0], s[1]);
+    boar.awake = true; boar.stirring = false; boar.justWoke = false;
+    boar.hp = 150; boar.maxHp = 150;
+    boar.lane = [{ x: p.x, y: p.y }];
+    p.hp = p.maxHp; p.dodge = -9;
+    g.castMirrorStance(); // gallop resolves inside this turn — and must NOT be parried
+    // the stance still fades at phase end (one enemy phase, spent or not) —
+    // the contract is: the hit LANDS, no riposte answers, no read is taken
+    check('a gallop ignores the mirror', p.hp < p.maxHp && boar.hp === 150 && !(G.reads && G.reads.charger), `hp ${p.hp}/${p.maxHp} boar ${boar.hp} reads ${JSON.stringify(G.reads)}`);
+    G.monsters.length = 0; }
+
+  // ranged fire ignores the stance entirely
+  p = fresh('mirrorblade');
+  { G.monsters.length = 0;
+    p.hp = p.maxHp; p.stanceT = 1; p.dodge = -9;
+    const bx = G.map.walkable(p.x + 1, p.y) ? p.x + 1 : p.x - 1; // point-blank: no wall can eat the bolt
+    g.spawnProjectile(bx, p.y, p.x, p.y, { dmg: 4, color: '#fff', speed: 9 });
+    for (let i = 0; i < 6 && p.hp === p.maxHp; i++) g.stepProjectiles();
+    check('a bolt ignores the mirror', p.hp < p.maxHp && p.stanceT === 1, `hp ${p.hp}/${p.maxHp} stance ${p.stanceT}`);
+    p.stanceT = 0; }
+
+  // the Lich's touch is not steel — boss melee cannot be parried (Vex r3:
+  // the chain reset made an adjacent Lich parry-LOCKABLE)
+  p = fresh('mirrorblade');
+  { G.monsters.length = 0;
+    const s = adjSpot(p); const lich = g.spawnMonster('lich', s[0], s[1]);
+    lich.awake = true; lich.stirring = false; lich.justWoke = false; lich.cd = 9; lich.beam = null;
+    const lh = lich.hp;
+    p.hp = p.maxHp; p.dodge = -9;
+    g.castMirrorStance();
+    check('the boss cannot be parried', lich.hp === lh && !(G.reads && G.reads.lich), `lich ${lich.hp}/${lh} reads ${JSON.stringify(G.reads)}`);
+    G.monsters.length = 0; }
+
+  // the run remembers its reads
+  { const src83 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('reads ride the save', src83.includes('reads: G.reads || {},') && src83.includes('G.reads = s.reads || {};'));
+    check('the mirror rests two turns (anti-lock)', src83.includes('p.stanceCd = 2;')); }
 
   // VEX'S BLOCKER (iter80 confirm round): a resumed run must keep killing
   { const src80 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');

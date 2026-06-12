@@ -243,3 +243,16 @@ Venom is the signature killer (7/37) — the counters exist (Clear Eye, antidote
 - iter82 widget round (pets hp 7+2d, atk 4+⌈d/2⌉, BFS heel): 7% (n=40). Pooled recent
   n=40 runs ≈10% — at the band floor; accepted, the buff answers the user's
   "shamblers seem too weak" submission and the BFS heel is the real feel fix.
+
+## 2026-06-12 — iter83: MIRRORBLADE (new class, endgame menu #4 pick C)
+Target band: 5–20% (skill class). History (smart/Veteran):
+- v1 hp36/atk5/def1/crit5, stance cd2, Read +1: **0%** (n=25) — riposte 2×5 not worth the turn
+- v2 atk7/crit12: **4%** (n=25)
+- v3 hp38, Read +2: **0%** (n=40) — sim bot DODGED golem windups instead of parrying them
+- v4 sim-policy fix (duelist answers the telegraph: stance into windups): **3%** (n=40)
+- v5 PARRY-CHAIN (a true parry resets stanceCd to 0 — chains reward the read, whiffs pay) + def 2:
+  **5% / 7%** (n=40 ×2, pooled 6.25%, 0 stalls) ✓ SHIPPED — floor-3 wall broke (19→6 deaths),
+  runs now die at the Lich instead.
+Lesson (rhymes with pilgrim's): the band moved when the VERB got a skill-expression
+mechanic (chain on success), not when stats rose. Ranged-heavy floors remain the
+class's designed weakness — steel answers only steel.

@@ -51,6 +51,7 @@ ENTITIES = {
     "player_mage": "a human mage in flowing blue robes holding a glowing arcane staff",
     "player_gravedigger": "a grim human gravedigger in a tattered brown coat and wide-brimmed hat, gripping a long iron spade, lantern at his belt",
     "player_pilgrim": "a humble human pilgrim in threadbare cream and ochre traveling robes, walking barefoot with a simple wooden staff and a small satchel, serene hooded face",
+    "player_mirrorblade": "a poised human duelist in pale blue-silver fencing leathers holding a thin mirror-polished blade vertically before the face in a salute, calm focused eyes",
     "shambler": "a freshly-risen zombie shambler, earth-caked pale green flesh, slack jaw, grasping arms, grave dirt falling from it",
     "rat": "a hunched giant brown rat with bared teeth and a long tail",
     "bat": "a purple cave bat with spread wings and tiny fangs",

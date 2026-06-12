@@ -67,7 +67,7 @@ const code = ['core.js', 'data.js', 'dungeon.js', 'render.js', 'game.js']
 
 const EXPORTS = `
 return { G, RNG, newGame, startLevel, tryMove, afterPlayerTurn, attackMonster, castSpell, diagOpen, castCharge, castShadowDash,
-  castExhume, castLastRites, castProstrate,
+  castExhume, castLastRites, castProstrate, castMirrorStance,
   castCleave, useItem, descend, computeDistField, DIRS8, cheb, dist2, ITEMS, MONSTERS, CLASSES, T,
   FINAL_DEPTH, tileWalkable, monsterAt, recomputeFOV, spawnMonster, playerAtk, playerDef,
   addItem, generateMap, score, onEnterTile, makeElite, useShrine, openGoldChest, traceBeam, SPELLS, FX,
@@ -128,7 +128,13 @@ function botTurn(policy, stats) {
   const casual = policy === 'casual'; // sloppy play: never dodges telegraphs, heals late, ignores shops/cleave/nova
   // dodge telegraphed heavy blows: step off the marked tile (stay adjacent to punish)
   const winder = !casual && G.monsters.find(m => m.windup === 1 && m.windupX === p.x && m.windupY === p.y && cheb(m.x, m.y, p.x, p.y) <= 1);
-  if (winder) {
+  if (winder && G.classId === 'mirrorblade') {
+    // a duelist does not dodge the telegraph — the wound-up blow IS the invitation
+    if (p.stanceT === 0 && p.stanceCd === 0) { game.castMirrorStance(); return; }
+    if (p.stanceT > 0) { attackMonster(winder); if (G.state === 'PLAY') afterPlayerTurn(); return; } // mirror up: punish while it swings into glass
+    // mirror resting: fall through to the sidestep like anyone else
+  }
+  if (winder && !(G.classId === 'mirrorblade' && (p.stanceT > 0 || (p.stanceT === 0 && p.stanceCd === 0)))) {
     let best = null;
     for (const [dx, dy] of DIRS8) {
       const nx = p.x + dx, ny = p.y + dy;
@@ -190,6 +196,16 @@ function botTurn(policy, stats) {
   }
   const adjAll = vis.filter(m => cheb(m.x, m.y, p.x, p.y) <= 1);
   const adj = adjAll.sort((a, b) => a.hp - b.hp)[0];
+  // steel answers steel: stance when an adjacent foe must brawl (melee, or a
+  // caster stuck on cooldown) and the mirror is rested — never vs ranged-only
+  if (!casual && G.classId === 'mirrorblade' && p.stanceT === 0 && p.stanceCd === 0) {
+    const blade = adjAll.find(m2 => m2.awake && (!m2.ranged || m2.cd > 0) && !m2.lane);
+    if (blade) {
+      const t0 = G.turn;
+      game.castMirrorStance();
+      if (G.turn > t0 || G.state !== 'PLAY') return;
+    }
+  }
   // walk with your dead: a gravedigger raises whenever the grave allows —
   // pre-raised shamblers carry grave-ward into the NEXT fight
   if (!casual && G.classId === 'gravedigger' && p.exhumeCd === 0

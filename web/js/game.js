@@ -574,7 +574,7 @@ function newPlayer(cls) {
     crit: cls.crit, dodge: cls.dodge || 0,
     mana: cls.mana, maxMana: cls.mana,
     gold: 0, poison: 0,
-    keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0, exhumeCd: 0, ritesCd: 0,
+    keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0, exhumeCd: 0, ritesCd: 0, stanceT: 0, stanceCd: 0,
     boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
     guardT: 0, guardCd: 0, vaultCd: 0, vaultStrike: 0, ring2: null,
     inventory: [], weapon: null, armor: null, ring: null,
@@ -646,7 +646,7 @@ function newGame(classId) {
   }
   G.classId = classId;
   G.classDef = CLASSES[classId];
-  G.prostrated = false; G.relicFloor = 0; G.relicGiven = 0;
+  G.prostrated = false; G.relicFloor = 0; G.relicGiven = 0; G.reads = {};
   G.fovRadius = G.classDef.fov;
   $('log').innerHTML = '';
   G.state = 'PLAY';
@@ -1107,6 +1107,8 @@ function afterPlayerTurn() {
   if (p.guardCd > 0) p.guardCd--;
   if (p.vaultCd > 0) p.vaultCd--;
   if (p.guardT > 0) p.guardT--; // the planted shield lowers after the foes' reply
+  if (p.stanceT > 0) { p.stanceT--; if (p.stanceT === 0) addMsg('No blade came — the mirror fades, the tempo spent.', 'm-dim'); }
+  if (p.stanceCd > 0) p.stanceCd--;
   if (p.vaultStrike > 0) p.vaultStrike--; // the opened back closes fast
   if (p.exhumeCd > 0) p.exhumeCd--;
   if (p.ritesCd > 0) p.ritesCd--;
@@ -1210,6 +1212,7 @@ function attackMonster(m, bonus = 0) {
   if (G.classId === 'rogue' && p.vaultStrike > 0) p.vaultStrike = 0; // one strike per vault
   const crit = !backstab && RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0) + 0.08 * relicCount('r_psalter'));
   let dmg = Math.max(1, playerAtk() + bonus + RNG.int(-1, 2) - m.def);
+  if (G.reads && m.id && G.reads[m.id]) dmg += 2; // Perfect Read: a solved species
   if (RELIC_BEASTS.has(m.id) && relicCount('r_beastbane')) dmg += 2 * relicCount('r_beastbane');
   if (RELIC_BONES.has(m.id) && relicCount('r_bonebane')) dmg += 2 * relicCount('r_bonebane');
   if (m.frozen > 0 && hasBoon('b_frost')) dmg += 2;
@@ -2097,6 +2100,40 @@ function castSpell(i) {
 }
 
 /* warrior-only: strike every adjacent enemy in one sweep */
+/* ---------- the Mirrorblade: their blow, your blade ---------- */
+function castMirrorStance() {
+  if (G.state !== 'PLAY' || !G.classDef.mirror) return;
+  const p = G.player;
+  if (p.stanceT > 0) { addMsg('You already stand in the mirror — let them swing.', 'm-dim'); return; }
+  if (p.stanceCd > 0) { addMsg(`Your wrists need ${p.stanceCd} more ${p.stanceCd === 1 ? 'turn' : 'turns'} to reset the mirror.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.stanceCd}`, '#9a91b8'); return; }
+  cancelTravel();
+  p.stanceT = 1;
+  p.stanceCd = 2; // tempo is the cost — and the lock (stance every turn) stays broken
+  Sfx.scroll();
+  addMsg('You raise the blade like a mirror. The NEXT blade to touch you answers to it.', 'm-gold');
+  spawnFloater(p.x, p.y, 'MIRROR', '#bde0ff', 14);
+  afterPlayerTurn();
+}
+function parryRiposte(m) {
+  const p = G.player;
+  p.stanceT = 0;
+  p.stanceCd = 0; // a TRUE parry resets the wrists — chains reward the read; whiffs still pay
+  const dmg = Math.max(2, 2 * playerAtk() + RNG.int(-1, 2) - m.def);
+  m.hp -= dmg; m.flashT = 1; m.awake = true;
+  Sfx.crit();
+  addShake(4);
+  spawnFloater(p.x, p.y, 'PARRY', '#bde0ff', 15);
+  spawnFloater(m.x, m.y, String(dmg), '#bde0ff');
+  addMsg(`MIRROR — you turn ${theM(m)}'s blow aside and answer for ${dmg}!`, 'm-gold');
+  // Perfect Read: a parried species is a solved species, all run long
+  if (m.id && !(G.reads && G.reads[m.id])) {
+    G.reads = G.reads || {};
+    G.reads[m.id] = 1;
+    addMsg(`Perfect read — ${theM(m)}'s rhythm is yours now (+2 damage to its kind this run).`, 'm-good');
+  }
+  if (m.hp <= 0 && G.monsters.includes(m)) killMonster(m);
+}
+
 /* ---------- the Gravedigger: the dead owe him work ---------- */
 const petCap = () => hasBoon('b_thirdgrave') ? 3 : 2;
 // even in death they serve: a falling shambler bursts in grave-rot
@@ -2534,6 +2571,10 @@ function monstersAct() {
       m.windup = 0;
       const mult = 2;
       m.windupRest = 1; // a swung-and-missed heavy needs a beat — re-telegraph spam made trolls a stalemate
+      if (p.x === m.windupX && p.y === m.windupY && cheb(m.x, m.y, p.x, p.y) <= 1 && p.stanceT > 0 && G.classDef.mirror) {
+        parryRiposte(m); // a wound-up blow turned aside — the telegraph was the invitation
+        continue;
+      }
       if (p.x === m.windupX && p.y === m.windupY && cheb(m.x, m.y, p.x, p.y) <= 1 && !RNG.chance(playerDodge())) {
         const dmg = Math.max(1, Math.round(m.atk * mult) + RNG.int(-1, 1) - playerDef());
         addMsg(`The blow lands like a falling gate — ${dmg} damage!`, 'm-bad');
@@ -2720,6 +2761,9 @@ function monstersAct() {
         }
         continue;
       }
+      if (p.stanceT > 0 && G.classDef.mirror && !m.boss) { parryRiposte(m); continue; }
+      if (p.stanceT > 0 && G.classDef.mirror && m.boss && G.visible.has(m.x + ',' + m.y))
+        addMsg('His touch is not steel — the mirror finds nothing to turn aside.', 'm-dim');
       const swings = m.elite === 'frenzied' && RNG.chance(0.25) ? 2 : 1;
       for (let s = 0; s < swings; s++) {
         if (RNG.chance(playerDodge())) {
@@ -3213,6 +3257,10 @@ function buildSpellPanel() {
     addRow('[V]', `${ABILITY_GLYPHS.cleave} Cleave`, 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
     addRow('[B]', `${ABILITY_GLYPHS.charge} Shield Charge`, 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
     addRow('[G]', `${ABILITY_GLYPHS.bulwark} Bulwark`, 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
+  } else if (G.classId === 'mirrorblade') {
+    addRow('[V]', `${ABILITY_GLYPHS.mirror} Mirror Stance`, 'ready', 'raise the mirror (costs the turn): the NEXT melee blow against you is parried to NOTHING and answered for DOUBLE your attack — bolts, shells and gallops ignore it', () => castMirrorStance(), 'mirror-row');
+    addRow('—', 'Perfect Read', '+2', 'passive: every species you parry takes +2 damage from you for the rest of the run', null);
+    addRow('—', 'Read the dark', '·', 'passive: heavies TELEGRAPH their big blows — a raised mirror turns even those aside; the Bestiary holds every rhythm', null);
   } else if (G.classId === 'pilgrim') {
     addRow('[V]', `${ABILITY_GLYPHS.prostrate} Prostrate`, '1/floor', 'kneel and pray (costs the turn): adjacent foes RECOIL two turns, 4 HP returns, and the NEXT wayside stone bears three gifts', () => castProstrate(), 'prostrate-row');
     addRow('—', 'The Road Provides', '·', 'passive: TWO free relic offers at every floor\'s start — and EVERY relic also fortifies you (+2 max HP)', null);
@@ -3281,6 +3329,11 @@ function updateUI() {
   if (ritesRow) {
     ritesRow.classList.toggle('cant', p.ritesCd > 0);
     ritesRow.querySelector('.cost').textContent = p.ritesCd > 0 ? p.ritesCd + 't' : 'ready';
+  }
+  const mirrorRow = $('mirror-row');
+  if (mirrorRow) {
+    mirrorRow.classList.toggle('cant', p.stanceCd > 0);
+    mirrorRow.querySelector('.cost').textContent = p.stanceCd > 0 ? p.stanceCd + 't' : 'ready';
   }
   const prosRow = $('prostrate-row');
   if (prosRow) {
@@ -3469,7 +3522,7 @@ function saveRun() {
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
       shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0, dailyPractice: !!G.dailyPractice,
-      corpses: G.corpses, prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0,
+      corpses: G.corpses, prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0, reads: G.reads || {},
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -3502,7 +3555,7 @@ function loadRun() {
   G.shrineArmed = s.shrineArmed || {};
   G.lichSaid = s.lichSaid || {}; G.echo = s.echo || null; G.darkNext = !!s.darkNext; G.corpses = s.corpses || [];
   G.bestiaryRun = s.bestiaryRun || {}; // a resumed run must keep killing cleanly (Vex blocker: undefined here threw in killMonster)
-  G.prostrated = !!s.prostrated; G.relicFloor = s.relicFloor || 0; G.relicGiven = s.relicGiven || 0;
+  G.prostrated = !!s.prostrated; G.relicFloor = s.relicFloor || 0; G.relicGiven = s.relicGiven || 0; G.reads = s.reads || {};
   G.dailyBase = s.dailyBase != null ? s.dailyBase : null;
   G.projectiles = (s.projectiles || []).map(pr => ({ ...pr, src: null }));
   G.shells = s.shells || [];
@@ -3766,7 +3819,7 @@ fitView();
 // one icon language everywhere: HUD buttons, sidebar rows, help (widget 7406d6fd)
 const ABILITY_GLYPHS = {
   spells: ['✦', '❅', '✚', '✷'], // bolt, nova, mend, blink
-  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴', exhume: '⛏', rites: '✟', prostrate: '🙏',
+  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴', exhume: '⛏', rites: '✟', prostrate: '🙏', mirror: '◇',
 };
 
 const MOVE_KEYS = {
@@ -3946,6 +3999,8 @@ function toggleHelp() {
       ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] steps you to a tile YOU choose (hover/tap it first, ≤4). Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
       ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you BEHIND a foe up to 3 tiles out — even one beside you — and strikes as you land. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      : G.classId === 'mirrorblade'
+      ? '<b style="color:var(--gold)">Your craft (mirrorblade).</b> Your blade is a mirror: raise it [V] and the NEXT melee blow against you is parried to NOTHING and answered for DOUBLE your attack. The stance lasts one enemy phase — if no blade comes, the tempo is spent for nothing, so read the room: heavies telegraph their crushing blows a full turn ahead, and a raised mirror turns even those aside. Bolts, lobbed shells and charging beasts ignore the mirror — steel answers only steel; sidestep the rest. Every species you parry is SOLVED: +2 damage to its kind for the rest of the run. The Bestiary holds every rhythm worth learning.'
       : G.classId === 'pilgrim'
       ? '<b style="color:var(--gold)">Your craft (pilgrim).</b> You start with nothing: 30 HP, bare hands, no armor. But the road provides — at every floor\'s first step a wayside stone offers a FREE relic, and relics stack forever: two Nettle Stings are +2 attack, three Oxhide Pages are +18 HP. Prostrate [V] spends a turn in prayer: foes beside you RECOIL for two turns, 4 HP returns with your breath, and the NEXT stone bears three gifts — once per floor, so choose the moment: escape hatch or richer offering. The early floors will try to kill you — but ONCE per run, Providence turns a killing blow into 1 HP. The build that survives the start is unlike anyone else\'s.'
       : G.classId === 'gravedigger'
@@ -4027,6 +4082,7 @@ window.addEventListener('keydown', ev => {
     else if (key === '3') newGame('mage');
     else if (key === '4') newGame('gravedigger');
     else if (key === '5') newGame('pilgrim');
+    else if (key === '6') newGame('mirrorblade');
     return;
   }
   if (G.state === 'DEAD' || G.state === 'WIN') {
@@ -4058,6 +4114,7 @@ window.addEventListener('keydown', ev => {
     else if (G.classId === 'mage') castSpell(3);
     else if (G.classId === 'gravedigger') castExhume();
     else if (G.classId === 'pilgrim') castProstrate();
+    else if (G.classId === 'mirrorblade') castMirrorStance();
     else castShadowDash();
     return;
   }
@@ -4414,6 +4471,10 @@ let joySuppressClick = false;
         'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade');
       add(ABILITY_GLYPHS.vault, 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null,
         'leap clean over an adjacent foe \u2014 your strike on arrival is a backstab');
+    } else if (G.classId === 'mirrorblade') {
+      add(ABILITY_GLYPHS.mirror, 'Mirror Stance', () => castMirrorStance(),
+        p2 => p2.stanceCd > 0 ? { txt: p2.stanceCd, cant: true } : null,
+        'raise the mirror (costs the turn): the NEXT melee blow against you is parried to NOTHING and answered for DOUBLE \u2014 bolts, shells and gallops ignore it');
     } else if (G.classId === 'pilgrim') {
       add(ABILITY_GLYPHS.prostrate, 'Prostrate', () => castProstrate(), p2 => G.prostrated ? { txt: '\u2713' } : null,
         'kneel and pray (costs the turn): adjacent foes RECOIL two turns, 4 HP returns, and the NEXT wayside stone bears three gifts');

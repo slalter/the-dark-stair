@@ -30,6 +30,13 @@ const CLASSES = {
     perks: ['33 HP \u00b7 6 ATK \u00b7 0 DEF \u00b7 15% sidestep', 'a FREE relic every floor \u2014 they stack forever', 'Providence: the road spares him ONCE \u00b7 V Prostrate'],
     start: ['w_walk', 'potion_heal'],
   },
+  mirrorblade: {
+    name: 'Mirrorblade', color: '#bde0ff', glyphColor: '#d2ecff',
+    hp: 38, atk: 7, def: 2, crit: 0.12, fov: 8, mana: 0, dodge: 0.08, mirror: true,
+    blurb: 'Their blow. Your blade.',
+    perks: ['38 HP \u00b7 7 ATK \u00b7 12% crit', 'V Mirror Stance: parry the next blow, answer DOUBLE', 'Perfect Read: a parried species takes +2 all run'],
+    start: ['w_dagger', 'potion_heal'],
+  },
   gravedigger: {
     name: 'Gravedigger', color: '#cfa86d', glyphColor: '#e0c089',
     hp: 40, atk: 8, def: 1, crit: 0.08, fov: 8, mana: 0, dodge: 0.05, digger: true,
