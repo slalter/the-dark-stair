@@ -521,13 +521,6 @@ body.mobile-ui #mhud {
 body.mobile-ui .spell-row .hotkey { display: none; }
 /* the drawer's two columns clipped stat values — hero panel gets the full row */
 body.mobile-ui.drawer-open #sidebar #hero-panel { grid-column: 1 / -1; }
-/* the feedback bubble sat on top of the message log — it lives top-right now */
-body.mobile-ui #guru-widget-btn {
-  bottom: auto !important; left: auto !important;
-  top: 30px !important; right: 8px !important;
-  width: 42px !important; height: 42px !important;
-  opacity: 0.85;
-}
 
 /* mobile round 2 (live user whispers): zoom slider, detail cards, landscape */
 #mhud #mh-zoom {

@@ -1413,6 +1413,7 @@ function saveBest() {
     if (!prev || !(prev.score >= 0) || rec.score > prev.score) {
       localStorage.setItem('arcaneDepthsBest', JSON.stringify(rec));
     }
+    if (!G.daily) recordRun(rec.won);
     if (G.daily && !G.dailyPractice) {
       const dprev = JSON.parse(localStorage.getItem('arcaneDaily') || 'null');
       if (!dprev || dprev.date !== dailyKey() || !(dprev.score >= 0) || rec.score > dprev.score) {
@@ -3219,6 +3220,49 @@ function updateConductLine() {
   el.innerHTML = bits.length ? 'conducts won: ' + bits.join(' · ') : '';
 }
 
+/* WIN RECORDS (endgame menu #6): the title remembers every hero's finest
+ * hour, per difficulty. Wins only count from the WIN state, so the
+ * abandon-path saveBest can raise a best score but never mint a victory. */
+function recordRun(won) {
+  let r = { wins: 0, best: 0, depth: 0 };
+  try {
+    const led = JSON.parse(localStorage.getItem('arcaneRecords') || '{}') || {};
+    const key = `${G.classId}_${G.diffId}`;
+    r = led[key] || r;
+    if (won) r.wins += 1;
+    const sc = score();
+    if (sc > r.best) r.best = sc;
+    if (G.depth > r.depth) r.depth = G.depth;
+    led[key] = r;
+    localStorage.setItem('arcaneRecords', JSON.stringify(led));
+  } catch (e) { /* ignore */ }
+  updateRecordLine();
+  return r;
+}
+function updateRecordLine() {
+  const el = $('record-line');
+  if (!el) return;
+  let led = {};
+  try { led = JSON.parse(localStorage.getItem('arcaneRecords') || '{}') || {}; } catch (e) { /* ignore */ }
+  const byClass = {};
+  for (const [key, r] of Object.entries(led)) {
+    if (!(r.wins > 0)) continue; // best-without-win stays a private memory
+    const us = key.indexOf('_');
+    const cls = key.slice(0, us), diff = key.slice(us + 1);
+    byClass[cls] = byClass[cls] || { wins: 0, details: [] };
+    byClass[cls].wins += r.wins;
+    const dname = (DIFFICULTIES[diff] && DIFFICULTIES[diff].name) || diff;
+    byClass[cls].details.push(`${dname} ×${r.wins} — best ${r.best}`);
+  }
+  const bits = [];
+  for (const [cls, agg] of Object.entries(byClass)) {
+    const cname = (CLASSES[cls] && CLASSES[cls].name) || cls;
+    bits.push(`<span title="${agg.details.join(' · ')}">⚔ ${cname} ×${agg.wins}</span>`);
+  }
+  el.classList.toggle('hidden', bits.length === 0);
+  el.innerHTML = bits.length ? 'victories: ' + bits.join(' · ') : '';
+}
+
 function updateContinueLine() {
   const s = peekSave();
   const el = $('continue-line');
@@ -4058,5 +4102,6 @@ let joySuppressClick = false;
 
 updateTorchLine();
 updateConductLine();
+updateRecordLine();
 // title boot: the daily line carries today's date from the first paint
 (() => { const dl = $('daily-line'); if (dl) dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`; })();

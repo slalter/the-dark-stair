@@ -52,7 +52,14 @@ const documentStub = {
   querySelectorAll() { return []; },
 };
 const windowStub = { addEventListener() {}, devicePixelRatio: 1, innerWidth: 1280, innerHeight: 800 };
-const localStorageStub = { getItem() { return null; }, setItem() {}, removeItem() {} };
+/* Map-backed so write-then-read round-trips work (win records, bestiary).
+ * Starts empty, so first-read behavior is identical to the old null stub. */
+const storeMap = new Map();
+const localStorageStub = {
+  getItem(k) { return storeMap.has(k) ? storeMap.get(k) : null; },
+  setItem(k, v) { storeMap.set(k, String(v)); },
+  removeItem(k) { storeMap.delete(k); },
+};
 class ImageStub { set src(v) { /* never loads */ } }
 
 const root = path.join(__dirname, '..', 'web', 'js');
@@ -66,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -631,6 +638,21 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('merge clears the run ledger', Object.keys(G.bestiaryRun).length === 0);
     check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
       Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
+
+  // WIN RECORDS (iter79, endgame menu #6): per-hero/per-difficulty ledger
+  p = fresh('warrior');
+  { G.daily = false; G.bonusScore = 0;
+    storeMap.delete('arcaneRecords');
+    const r1 = g.recordRun(true);
+    check('a win is remembered', r1.wins === 1 && r1.best === g.score(), JSON.stringify(r1));
+    const led = JSON.parse(localStorageStub.getItem('arcaneRecords') || '{}');
+    check('the ledger keys hero and difficulty', !!led[`${G.classId}_${G.diffId}`], Object.keys(led).join(','));
+    G.bonusScore += 5000; // a richer run, ended without a win
+    const r2 = g.recordRun(false);
+    check('a death raises the best but mints no victory', r2.wins === 1 && r2.best > r1.best, JSON.stringify(r2));
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('records are daily-gated in saveBest', src.includes('if (!G.daily) recordRun(rec.won)'));
+    storeMap.delete('arcaneRecords'); }
 
   // CONDUCT BADGES (iter78, endgame menu #3): recorded on win, daily-gated
   { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
