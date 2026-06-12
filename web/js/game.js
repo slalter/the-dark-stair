@@ -1529,17 +1529,25 @@ function aimHints() {
       const d = dist2(m.x, m.y, p.x, p.y);
       if (d < bd) { bd = d; best = m; }
     }
-    if (best) hints.push({ x: best.x, y: best.y, color: '#ff8c5e' });
+    if (best) hints.push({ x: best.x, y: best.y, color: '#ff8c5e', glyph: ABILITY_GLYPHS.spells[0] });
   } else if (G.classId === 'rogue' && p.dashCd <= 0) {
-    let best = null, bd = 1e9;
-    for (const m of G.monsters) {
-      if (!G.visible.has(m.x + ',' + m.y)) continue;
-      const c = cheb(m.x, m.y, p.x, p.y);
-      if (c < 1 || c > 3) continue;
-      const d = dist2(m.x, m.y, p.x, p.y);
-      if (d < bd) { bd = d; best = m; }
+    // mirror castShadowDash exactly — hover first, else nearest in reach
+    // (the mark used to ignore hover and could point at the WRONG foe)
+    let best = null;
+    const inReach = m => G.visible.has(m.x + ',' + m.y) && cheb(m.x, m.y, p.x, p.y) >= 1 && cheb(m.x, m.y, p.x, p.y) <= 3;
+    if (FX.hover) {
+      const hm = monsterAt(FX.hover.x, FX.hover.y);
+      if (hm && inReach(hm)) best = hm;
     }
-    if (best) hints.push({ x: best.x, y: best.y, color: '#a8f0c0' });
+    if (!best) {
+      let bd = 1e9;
+      for (const m of G.monsters) {
+        if (!inReach(m)) continue;
+        const d = dist2(m.x, m.y, p.x, p.y);
+        if (d < bd) { bd = d; best = m; }
+      }
+    }
+    if (best) hints.push({ x: best.x, y: best.y, color: '#a8f0c0', glyph: ABILITY_GLYPHS.dash });
   } else if (G.classId === 'warrior' && p.chargeCd <= 0) {
     let pick = null, pd = 1e9;
     for (const m of G.monsters) {
@@ -1559,7 +1567,17 @@ function aimHints() {
       const d = dist2(m.x, m.y, p.x, p.y);
       if (d < pd) { pd = d; pick = m; }
     }
-    if (pick) hints.push({ x: pick.x, y: pick.y, color: '#ffd75e' });
+    if (pick) hints.push({ x: pick.x, y: pick.y, color: '#ffd75e', glyph: ABILITY_GLYPHS.charge });
+  }
+  if (hints.length && !aimHints.taught) {
+    aimHints.taught = true;
+    let known = false;
+    try { known = !!localStorage.getItem('arcaneAimHint'); } catch (e) { /* ignore */ }
+    if (!known) {
+      try { localStorage.setItem('arcaneAimHint', '1'); } catch (e) { /* ignore */ }
+      const verb = G.classId === 'mage' ? 'your firebolt [F]' : G.classId === 'rogue' ? 'your Shadow Dash [V]' : 'your Shield Charge [B]';
+      addMsg(`The glowing mark shows who ${verb} would strike right now.`, 'm-gold');
+    }
   }
   return hints;
 }

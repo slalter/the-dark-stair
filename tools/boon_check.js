@@ -171,7 +171,11 @@ const TESTS = {
     G.monsters.length = 0;
     return m.hp <= mh - 2;
   },
-  b_fleet(p) { const d0 = g.playerDodge(); g.applyBoon('b_fleet'); return g.playerDodge() > d0 + 0.1 && g.dreadShift() >= 40; },
+  b_fleet(p) {
+    p.dodge = 0.2; // mid-range: a water-tile spawn clamps dodge at 0 and ate the delta (seed flake)
+    const d0 = g.playerDodge(); g.applyBoon('b_fleet');
+    return g.playerDodge() > d0 + 0.1 && g.dreadShift() >= 40;
+  },
   b_ghost(p) { const d0 = g.playerDodge(); g.applyBoon('b_ghost'); return g.playerDodge() > d0 + 0.05; },
   b_thrift(p) {
     g.applyBoon('b_thrift');

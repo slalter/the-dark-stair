@@ -846,6 +846,16 @@ function draw(t) {
         ctx.lineTo(cx2, cy2 + sy2 * L);
         ctx.stroke();
       }
+      // the ability's own glyph rides the mark so it explains itself
+      // (live whisper: 'the aiming system... kinda just confusing')
+      if (h.glyph) {
+        ctx.globalAlpha = Math.min(1, pulse + 0.25);
+        ctx.fillStyle = h.color;
+        ctx.font = 'bold 9px Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(h.glyph, bx + CELL / 2, by - 4);
+        ctx.font = GLYPH_FONT;
+      }
       ctx.restore();
     }
   }
