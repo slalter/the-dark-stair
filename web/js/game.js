@@ -3737,6 +3737,7 @@ let joySuppressClick = false;
       '<button class="mbtn small" id="mb-explore" title="auto-explore">\u25ce</button>' +
       '<button class="mbtn small" id="mb-wait" title="wait">\u00b7</button>' +
       '<button class="mbtn small" id="mb-descend" title="descend">\u25bc</button>' +
+      '<button class="mbtn small" id="mb-pause" title="pause">II</button>' +
     '</div>' +
     '<div class="cluster-right" id="mh-abilities"></div>';
   document.body.appendChild(hud);
@@ -3767,6 +3768,7 @@ let joySuppressClick = false;
   tap('mb-explore', () => autoExplore());
   tap('mb-wait', () => { if (G.state !== 'PLAY') return; addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); });
   tap('mb-descend', () => { if (G.state !== 'PLAY') return; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); });
+  tap('mb-pause', () => { if (G.state === 'PLAY') pauseGame(); }); // Abandon Run was Escape-only — unreachable by thumb (Maya r3)
 
   // the log rolls and burns away; a tap opens the full scroll
   const logEl = $('log');
@@ -3886,6 +3888,14 @@ let joySuppressClick = false;
     const p = G.player;
     const inRun = p && (G.state === 'PLAY' || G.state === 'BOON');
     hud.style.display = inRun ? 'block' : 'none';
+    // the run log must not haunt the title/death screens — fixed at z-30 it
+    // sat OVER the title (z-10) and ate every tap in the bottom band
+    // (Maya r3: the daily line was unreachable)
+    if (logEl) {
+      const logOn = G.state === 'PLAY' || G.state === 'BOON' || G.state === 'CUTSCENE';
+      logEl.style.display = logOn ? '' : 'none';
+      if (!logOn) logEl.classList.remove('expanded');
+    }
     if (G.state !== 'PLAY') document.body.classList.remove('drawer-open');
     if (!inRun) return;
     // gift screen owns the thumb: the ability cluster overlapped the cards
