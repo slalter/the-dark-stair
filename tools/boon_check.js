@@ -621,6 +621,12 @@ console.log('\n=== weapons with souls · rings · actives ===');
   // every heavy truly rests after a whiff (Gruk parity)
   check('heavies rest after a whiff', String(g.monstersAct).includes('m.skipT = 1; // every heavy truly rests'));
 
+  // META audit (iter72, completionist 'Vera'):
+  { const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('keeper lore is gated out of dailies', src.includes("!G.daily && sanctumOwned('s_lore')"));
+    check('practice dailies never write the record', src.includes('G.daily && !G.dailyPractice'));
+    check('a recorded daily spends the seed', src.includes("localStorage.setItem('arcaneDailyPlayed', dailyKey())")); }
+
   // TEMPO pack (iter68, speedrunner audit 'Dash')
   // ward sales pay gold but mint no SCORE
   p = fresh('warrior');

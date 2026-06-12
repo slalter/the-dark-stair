@@ -428,6 +428,14 @@ const warePrice = w => Math.ceil(w.price * (hasBoon('b_greed') ? 1.25 : 1));
 function newGame(classId) {
   cancelTravel();
   G.daily = dailyPending;
+  G.dailyPractice = false;
+  if (G.daily) {
+    try {
+      if (localStorage.getItem('arcaneDailyPlayed') === dailyKey()) {
+        G.dailyPractice = true; // the seed is spent — replays don't score (meta-audit: infinite re-entry made the daily a memorization contest)
+      }
+    } catch (e) { /* ignore */ }
+  }
   G.darkUsed = false; // fresh run, fresh shortcut
   dailyPending = false;
   const _dl = $('daily-line');
@@ -476,7 +484,9 @@ function newGame(classId) {
   if (!newGame.introShown) { newGame.introShown = true; showCutscene('intro', () => offerBoons()); }
   else offerBoons();
   addMsg(`The ${G.classDef.name.toLowerCase()} sets foot on the Dark Stair. The air is cold and old.`, 'm-magic');
-  if (G.daily) addMsg(`DAILY CHALLENGE — ${dailyKey()}. One dungeon, same for all who dare today.`, 'm-gold');
+  if (G.daily) addMsg(G.dailyPractice
+    ? `DAILY (PRACTICE) — today's attempt is already spent; this run will not be recorded.`
+    : `DAILY CHALLENGE — ${dailyKey()}. One dungeon, same for all who dare today. ONE recorded attempt.`, 'm-gold');
   addMsg('Vyrakhel the Lich waits on floor 6. Find him. End him.', 'm-dim');
   if (typeof MOBILE_UI !== 'undefined' && MOBILE_UI) {
     addMsg('Drag anywhere to walk — tap a foe to strike. ◎ explores for you, ☰ opens your pack.', 'm-dim');
@@ -506,7 +516,7 @@ function startLevel(depth) {
   const theme = map.theme;
   G.stairsPos = map.stairsPos;
   // Keeper's Lore (sanctum tier 2): the way down is known from the first step
-  if (sanctumOwned('s_lore') && map.stairsPos) {
+  if (!G.daily && sanctumOwned('s_lore') && map.stairsPos) { // dailies disable ALL sanctum gifts — lore included (meta-audit leak)
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const sx = map.stairsPos.x + dx, sy = map.stairsPos.y + dy;
       if (map.inBounds(sx, sy)) map.explored[map.idx(sx, sy)] = 1;
@@ -1310,11 +1320,12 @@ function saveBest() {
     if (!prev || !(prev.score >= 0) || rec.score > prev.score) {
       localStorage.setItem('arcaneDepthsBest', JSON.stringify(rec));
     }
-    if (G.daily) {
+    if (G.daily && !G.dailyPractice) {
       const dprev = JSON.parse(localStorage.getItem('arcaneDaily') || 'null');
       if (!dprev || dprev.date !== dailyKey() || !(dprev.score >= 0) || rec.score > dprev.score) {
         localStorage.setItem('arcaneDaily', JSON.stringify({ ...rec, date: dailyKey() }));
       }
+      localStorage.setItem('arcaneDailyPlayed', dailyKey()); // the seed is spent
     }
   } catch (e) { /* storage unavailable */ }
 }
@@ -1402,7 +1413,7 @@ function lootGilded(x, y) {
   }
   G.map.set(x, y, T.FLOOR);
   const id = RNG.weighted(itemPoolForDepth(Math.min(G.depth + 2, FINAL_DEPTH)));
-  if (addItem(id)) addMsg(`You pry a ${ITEMS[id].name} from his grip.`, 'm-good');
+  if (addItem(id)) addMsg(`You pry ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name} from his grip.`, 'm-good');
   else { G.items.push({ x, y, id }); addMsg(`A ${ITEMS[id].name} tumbles free — your pack is full.`, 'm-dim'); }
   const gold = Math.round(15 * G.depth * (G.map.theme.goldMult || 1));
   earnGold(gold);
@@ -2750,6 +2761,7 @@ function autoExplore() {
         if ((map.explored[i3] || map.fovSeen[i3]) && map.tiles[i3] === T.STAIRS) { sx3 = x3; sy3 = y3; break; }
       }
       if (sx3 >= 0) {
+        if (p.x === sx3 && p.y === sy3) { addMsg('You stand on the stairs — Enter descends.', 'm-gold'); return; }
         if (G.exploreDone === G.depth) { startTravelTo(sx3, sy3); return; }
         G.exploreDone = G.depth;
         addMsg(`No unexplored paths remain — the stairs lie ${compass(sx3, sy3)}. Press O again (or Enter) to make for them.`, 'm-gold');
@@ -3012,7 +3024,7 @@ function saveRun() {
       lichSaid: G.lichSaid, echo: G.echo, darkNext: !!G.darkNext, dailyBase: G.dailyBase,
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
-      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0,
+      shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0, dailyPractice: !!G.dailyPractice,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -3052,6 +3064,7 @@ function loadRun() {
   G.shopSeen = !!s.shopSeen;
   G.darkUsed = !!s.darkUsed;
   G.shroudT = s.shroudT || 0;
+  G.dailyPractice = !!s.dailyPractice;
   G.player = s.player; G.monsters = s.monsters; G.items = s.items;
   G.shop = s.shop || []; G.decals = s.decals || [];
   const m = new GameMap(s.map.depth);
