@@ -221,6 +221,7 @@ function stepProjectiles() {
 
 /* ---------- boons: pick one of three between floors ---------- */
 function offerBoons() {
+  G.boonShownAt = Date.now();
   if (!G.player) return;
   const pool = boonPool();
   if (!pool.length) return;
@@ -262,6 +263,7 @@ function offerBoons() {
   Sfx.scroll();
 }
 function pickBoon(id) {
+  if (G.boonShownAt && Date.now() - G.boonShownAt < 500) return; // mash-through guard (fresh-eyes: picked Blood Pact without seeing the cards)
   if (G.state !== 'BOON') return;
   $('boon-screen').classList.add('hidden');
   G.state = 'PLAY';
@@ -650,7 +652,7 @@ function startLevel(depth) {
           !G.items.some(it => it.x === s.x && it.y === s.y));
         if (spot) G.shop.push({ x: spot.x, y: spot.y, id, price: ITEMS[id].price(depth) });
       }
-      if (G.shop.length) addMsg(`You sense a merchant's wards on this floor… somewhere to the ${compass(G.shop[0].x, G.shop[0].y)}.`, 'm-magic');
+      if (G.shop.length) addMsg(`You sense a merchant's wards — a warded shop — on this floor… somewhere to the ${compass(G.shop[0].x, G.shop[0].y)}.`, 'm-magic');
     }
   }
 
@@ -2490,7 +2492,10 @@ function findPath(sx, sy, tx, ty, avoidTraps, allowWares) {
   const map = G.map;
   const passable = (x, y) => {
     const i = map.idx(x, y);
-    if (!map.explored[i] || !tileWalkable(map.tiles[i])) return false;
+    // SEEN counts: the renderer draws every fovSeen tile, so click-travel
+    // refusing to route over them read as 'broken game' (fresh-eyes near-
+    // quit: a visible staircase answered every click with 'No path there')
+    if ((!map.explored[i] && !map.fovSeen[i]) || !tileWalkable(map.tiles[i])) return false;
     if (avoidTraps && map.tiles[i] === T.TRAP && map.trapSeen[i] && !(x === tx && y === ty)) return false;
     // never path through shop wares unless they ARE the destination — walking buys them
     if (!allowWares && G.shop.some(s => s.x === x && s.y === y) && !(x === tx && y === ty)) return false;
@@ -2601,7 +2606,13 @@ function startTravelTo(tx, ty) {
   }
   let path = findPath(G.player.x, G.player.y, tx, ty, true) || findPath(G.player.x, G.player.y, tx, ty, false);
   if (!path || !path.length) path = findPath(G.player.x, G.player.y, tx, ty, false, true); // last resort: cross the merchant's carpet
-  if (!path || !path.length) { addMsg('No path there — the way is blocked.', 'm-dim'); return; }
+  if (!path || !path.length) {
+    const ti = G.map.idx(tx, ty);
+    addMsg((G.map.explored[ti] || G.map.fovSeen[ti])
+      ? 'No route you know of reaches it yet — uncover more of the floor.'
+      : 'No path there — the way is blocked.', 'm-dim');
+    return;
+  }
   cancelTravel();
   travelPath = path;
   travelTimer = setInterval(stepTravel, 95);
@@ -2703,7 +2714,21 @@ function autoExplore() {
     if (chest) { addMsg('A sealed chest still waits — you make for it.', 'm-dim'); startTravelTo(chest.x, chest.y); return; }
     if (map.hasGoldChest && Array.from(map.tiles).some(t => t === T.GOLDCHEST))
       addMsg('Only the sealed vault remains — somewhere on this floor, an elite carries its key.', 'm-dim');
-    else addMsg('No unexplored paths remain on this floor.', 'm-dim');
+    else {
+      // fresh-eyes near-quit #2: 'cleared floor, visible exit, game says
+      // nothing.' The one key he uses must finish the job: O-again makes
+      // for the stairs, and the log says so with a compass.
+      let sx3 = -1, sy3 = -1;
+      for (let y3 = 0; y3 < map.h && sx3 < 0; y3++) for (let x3 = 0; x3 < map.w; x3++) {
+        const i3 = map.idx(x3, y3);
+        if ((map.explored[i3] || map.fovSeen[i3]) && map.tiles[i3] === T.STAIRS) { sx3 = x3; sy3 = y3; break; }
+      }
+      if (sx3 >= 0) {
+        if (G.exploreDone === G.depth) { startTravelTo(sx3, sy3); return; }
+        G.exploreDone = G.depth;
+        addMsg(`No unexplored paths remain — the stairs lie ${compass(sx3, sy3)}. Press O again (or Enter) to make for them.`, 'm-gold');
+      } else addMsg('No unexplored paths remain on this floor.', 'm-dim');
+    }
     return;
   }
   startTravelTo(target.x, target.y);
@@ -3824,6 +3849,11 @@ let joySuppressClick = false;
     hud.style.display = inRun ? 'block' : 'none';
     if (G.state !== 'PLAY') document.body.classList.remove('drawer-open');
     if (!inRun) return;
+    // gift screen owns the thumb: the ability cluster overlapped the cards
+    // and a stray tap cast Vault mid-choice (fresh-eyes, phone)
+    const inPlay = G.state === 'PLAY';
+    hud.querySelector('#mh-abilities').style.display = inPlay ? '' : 'none';
+    hud.querySelector('.cluster-left').style.display = inPlay ? '' : 'none';
     if (builtFor !== G.classId) rebuild();
     $('mh-hp').style.width = (100 * p.hp / p.maxHp) + '%';
     const mw = hud.querySelector('#mh-mana-wrap');

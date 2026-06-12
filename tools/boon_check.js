@@ -457,9 +457,13 @@ console.log('\n=== weapons with souls · rings · actives ===');
     const dealt = hp0 - m.hp;
     check('fangs deepen the backstab to x4', dealt >= 4 * (10 + g.ITEMS.w_fangs.bonus - 1) && dealt <= 4 * (10 + g.ITEMS.w_fangs.bonus + 2), `dealt ${dealt}`); }
 
-  // ring of the zephyr: +8% dodge
-  p = fresh('rogue'); p.ring = 'ring_swift';
-  check('zephyr ring lifts dodge by 8%', Math.abs(g.playerDodge() - (0.18 + 0.08)) < 1e-9, `dodge ${g.playerDodge()}`);
+  // ring of the zephyr: +8% dodge (DELTA assert — a water-tile spawn shifts
+  // the absolute value, same flake class as b_fleet)
+  p = fresh('rogue');
+  { const d0 = g.playerDodge();
+    p.ring = 'ring_swift';
+    check('zephyr ring lifts dodge by 8%', Math.abs(g.playerDodge() - d0 - 0.08) < 1e-9, `dodge ${g.playerDodge()} from ${d0}`);
+    p.ring = null; }
 
   // ring of the leech: kills feed 1 HP
   p = fresh('warrior'); p.ring = 'ring_blood'; p.hp = 10;

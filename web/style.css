@@ -580,3 +580,7 @@ body.mobile-ui #continue-line {
   border-radius: 10px; padding: 14px 18px; font-weight: bold;
 }
 body.mobile-ui #continue-line.hidden { display: none; }
+
+/* the ember loop, surfaced before the first death (fresh-eyes: 'would have
+   changed how safe I felt experimenting for the entire first session') */
+.ember-hint { font: 12px Consolas, monospace; color: #9a91b8; opacity: 0.85; margin: 2px 0; }
