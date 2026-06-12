@@ -227,3 +227,16 @@ play right, but atk parity is what moved the band. Pet kills mint no score by de
 - v7 confirm (post-persona round: class boons + UI fixes, combat math unchanged): 7% (n=40).
   Pooled v6+v7 = 9/80 = 11% — in band; Morrigan (human-feel persona) judged power
   "right, maybe a hair strong on attrition" → no further tuning. ACCEPTED at ~11-15%.
+
+## 2026-06-12 — iter81: PILGRIM (new class, endgame menu #4 pick B)
+Target band: 5–20% (late-bloomer; the weakest start must stay genuinely dangerous). History (smart/Veteran):
+- v1 hp30/atk5/def0/dodge8 + 1 relic/floor: **0%** (n=25) — goblins ate him on floor 2
+- v2 + walking staff (+1) + Providence (once/run, killing blow → 1 HP): **0%** (n=25) — wall moved to floor 3
+- v3 hp33 + outset blessing (2 relics on floor 1) + prayer mends 4: **0%** (n=25)
+- v4 atk6 / dodge15: **0%** (n=25) — one run reached the Lich
+- v5 every relic also +2 max HP ('every blessing fortifies'): **~0-4%** (n=25)
+- v6 Prostrate gains the RECOIL (adjacent foes stagger 2, once/floor — the class's missing combat verb): no measurable jump alone
+- v7 TWO relic offers per floor ('matins and vespers', ~12-14 relics/run): **4%** (n=25) → **7% (n=40, 0 stalls)** ✓ SHIPPED
+Lesson: a no-mitigation class can't be fixed by stat nudges in this tuning — it needed BOTH a
+combat verb (prayer recoil) and an engine heavy enough to compound (2 stones/floor + fortify).
+Venom is the signature killer (7/37) — the counters exist (Clear Eye, antidotes, Chalice).

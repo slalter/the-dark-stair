@@ -23,6 +23,13 @@ const CLASSES = {
     perks: ['20 mana · 4 spells', 'wards: mana drinks half of every blow', 'F bolt · G nova · H mend · V blink'],
     start: ['potion_heal', 'scroll_fire'],
   },
+  pilgrim: {
+    name: 'Pilgrim', color: '#e8d9a8', glyphColor: '#f0e4bc',
+    hp: 33, atk: 6, def: 0, crit: 0.05, fov: 8, mana: 0, dodge: 0.15, pilgrim: true,
+    blurb: 'He owns nothing. The road provides.',
+    perks: ['33 HP \u00b7 6 ATK \u00b7 0 DEF \u00b7 15% sidestep', 'a FREE relic every floor \u2014 they stack forever', 'Providence: the road spares him ONCE \u00b7 V Prostrate'],
+    start: ['w_walk', 'potion_heal'],
+  },
   gravedigger: {
     name: 'Gravedigger', color: '#cfa86d', glyphColor: '#e0c089',
     hp: 40, atk: 8, def: 1, crit: 0.08, fov: 8, mana: 0, dodge: 0.05, digger: true,
@@ -31,6 +38,27 @@ const CLASSES = {
     start: ['w_dagger', 'potion_heal'],
   },
 };
+
+/* ---------- relics: the pilgrim's road-gifts — small, pure, and they stack ---------- */
+const RELICS = {
+  r_sting:     { name: 'Nettle Sting',      desc: '+1 attack' },
+  r_hide:      { name: 'Oxhide Page',       desc: '+6 max HP, healed in full' },
+  r_ward:      { name: 'Pewter Icon',       desc: '+1 defense' },
+  r_quick:     { name: 'Swallow Feather',   desc: '+4% dodge' },
+  r_beastbane: { name: 'Hunter\'s Psalm',   desc: '+2 damage to beasts (rats, bats, spiders, slimes, trolls)' },
+  r_bonebane:  { name: 'Litany of Dust',    desc: '+2 damage to the risen dead (skeletons, wraiths, chargers, the Lich)' },
+  r_lantern:   { name: 'Vigil Lantern',     desc: '+1 sight' },
+  r_soles:     { name: 'Tireless Soles',    desc: 'heal 3 every time you descend' },
+  r_alms:      { name: 'Alms Bowl',         desc: '+35 gold, blessed into your purse now' },
+  r_psalter:   { name: 'Dog-eared Psalter', desc: '+8% critical chance' },
+  r_clarity:   { name: 'Clear Eye',         desc: 'you sense hidden traps, as a rogue does' },
+  r_thorn:     { name: 'Crown of Briars',   desc: 'melee attackers take 1 damage back' },
+  r_chalice:   { name: 'Tin Chalice',       desc: 'potions heal +4 more' },
+  r_zeal:      { name: 'Martyr\'s Knot',    desc: '+2 attack while below 30% HP' },
+  r_beacon:    { name: 'Coin of Passage',   desc: '+10% gold from every source' },
+};
+const RELIC_BEASTS = new Set(['rat', 'bat', 'spider', 'slime', 'slimelet', 'troll']);
+const RELIC_BONES = new Set(['skeleton', 'wraith', 'charger', 'lich']);
 
 /* ---------- difficulty ---------- */
 const DIFFICULTIES = {
@@ -189,6 +217,7 @@ const ITEMS = {
   scroll_fire:  { name: 'scroll of firestorm', glyph: '?', color: '#ff8c5e', kind: 'scroll', stack: true, price: d => 22 + 6 * d },
   scroll_tele:  { name: 'scroll of blinking',  glyph: '?', color: '#9ecbff', kind: 'scroll', stack: true, price: d => 18 + 5 * d },
   scroll_map:   { name: 'scroll of revelation',glyph: '?', color: '#c7a4ff', kind: 'scroll', stack: true, price: d => 15 + 4 * d },
+  w_walk:       { name: 'walking staff',       glyph: '/', color: '#c9b08a', kind: 'weapon', bonus: 1, price: () => 8 },
   w_dagger:     { name: 'iron dagger',         glyph: '/', color: '#b9c2d0', kind: 'weapon', bonus: 2, price: () => 25 },
   w_sword:      { name: 'steel sword',         glyph: '/', color: '#d8e2f0', kind: 'weapon', bonus: 4, price: () => 35 },
   w_axe:        { name: 'dwarven battleaxe',   glyph: '/', color: '#e8c97a', kind: 'weapon', bonus: 6, price: () => 90 },

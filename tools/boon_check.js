@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -379,6 +379,141 @@ const TESTS = {
     return ok;
   },
 };
+
+/* ---------- relic truth tests: every relic must be known and truthful ---------- */
+const RELIC_TESTS = {
+  r_sting(p) { const a0 = g.playerAtk(); g.applyRelic('r_sting'); g.applyRelic('r_sting'); return g.playerAtk() === a0 + 2; },
+  r_hide(p) { const m0 = p.maxHp; p.hp = 1; g.applyRelic('r_hide'); return p.maxHp === m0 + 8 && p.hp === 9; }, // +6 page, +2 vessel
+  r_ward(p) { const d0 = g.playerDef(); g.applyRelic('r_ward'); return g.playerDef() === d0 + 1; },
+  r_quick(p) { const d0 = g.playerDodge(); g.applyRelic('r_quick'); return Math.abs(g.playerDodge() - d0 - 0.04) < 1e-9; },
+  r_beastbane(p) {
+    for (let i = 0; i < 5; i++) g.applyRelic('r_beastbane'); // +10: far above the ±1/+2 swing noise
+    const s = adjSpot(p); const rat = g.spawnMonster('rat', s[0], s[1]); rat.hp = 999; rat.def = 0;
+    g.attackMonster(rat); const dRat = 999 - rat.hp;
+    G.monsters.length = 0;
+    const s2 = adjSpot(p); const gob = g.spawnMonster('goblin', s2[0], s2[1]); gob.hp = 999; gob.def = 0;
+    g.attackMonster(gob); const dGob = 999 - gob.hp;
+    G.monsters.length = 0;
+    return dRat >= g.playerAtk() + 9 - 1 && dGob <= 2 * (g.playerAtk() + 2); // goblin may crit; rat must carry the bane
+  },
+  r_bonebane(p) {
+    for (let i = 0; i < 5; i++) g.applyRelic('r_bonebane');
+    const s = adjSpot(p); const sk = g.spawnMonster('skeleton', s[0], s[1]); sk.hp = 999; sk.def = 0;
+    g.attackMonster(sk); const d = 999 - sk.hp;
+    G.monsters.length = 0;
+    return d >= g.playerAtk() + 9 - 1;
+  },
+  r_lantern(p) { g.recomputeFOV(); const f0 = G.fovRadius; g.applyRelic('r_lantern'); g.recomputeFOV(); return G.fovRadius === f0 + 1; },
+  r_soles(p) {
+    g.applyRelic('r_soles');
+    const src81 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    return src81.includes("relicCount('r_soles') && G.player.hp < G.player.maxHp") && src81.includes('3 * relicCount(\'r_soles\')');
+  },
+  r_alms(p) { const bc = (p.relics && p.relics.r_beacon) || 0; const g0 = p.gold; g.applyRelic('r_alms'); return p.gold === g0 + Math.ceil(35 * (1 + 0.1 * bc)); },
+  r_psalter(p) {
+    for (let i = 0; i < 12; i++) g.applyRelic('r_psalter'); // eff. crit > 100%: every swing doubles
+    const s = adjSpot(p); const rat = g.spawnMonster('rat', s[0], s[1]); rat.hp = 999; rat.def = 0;
+    g.attackMonster(rat); const d = 999 - rat.hp;
+    G.monsters.length = 0;
+    return d >= 2 * (g.playerAtk() - 1);
+  },
+  r_clarity(p) {
+    g.applyRelic('r_clarity');
+    const src81 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    return src81.includes("G.classDef.senses || relicCount('r_clarity') > 0");
+  },
+  r_thorn(p) {
+    const pre = (p.relics && p.relics.r_thorn) || 0;
+    g.applyRelic('r_thorn'); g.applyRelic('r_thorn');
+    const s = adjSpot(p); const gob = g.spawnMonster('goblin', s[0], s[1]);
+    gob.awake = true; gob.stirring = false; gob.justWoke = false; gob.hp = 50; gob.maxHp = 50;
+    p.hp = p.maxHp;
+    G.monsters.length = 0; G.monsters.push(gob);
+    g.monstersAct();
+    const bled = 50 - gob.hp;
+    G.monsters.length = 0;
+    return bled === pre + 2; // every briar bites once
+  },
+  r_chalice(p) {
+    const pre = (p.relics && p.relics.r_chalice) || 0;
+    for (let i = 0; i < 3; i++) g.applyRelic('r_chalice');
+    p.maxHp = 99; p.hp = 40;
+    g.addItem('potion_heal');
+    const i2 = p.inventory.findIndex(e => e.id === 'potion_heal');
+    g.useItem(i2);
+    return p.hp === 40 + 14 + 2 * G.depth + 4 * (pre + 3); // +4 per chalice over the base formula
+  },
+  r_zeal(p) {
+    const pre = (p.relics && p.relics.r_zeal) || 0;
+    g.applyRelic('r_zeal'); g.applyRelic('r_zeal');
+    p.hp = p.maxHp; const aFull = g.playerAtk();
+    p.hp = Math.max(1, Math.floor(p.maxHp * 0.2)); const aLow = g.playerAtk();
+    return aLow === aFull + 2 * (pre + 2);
+  },
+  r_beacon(p) {
+    const pre = (p.relics && p.relics.r_beacon) || 0;
+    for (let i = 0; i < 5; i++) g.applyRelic('r_beacon');
+    const g0 = p.gold; g.earnGold(10);
+    return p.gold === g0 + Math.ceil(10 * (1 + 0.1 * (pre + 5)));
+  },
+};
+console.log('\n=== relic truth harness (the road must not lie) ===');
+{ const p = fresh('pilgrim');
+  const m0 = p.maxHp;
+  g.applyRelic('r_sting');
+  check('every blessing fortifies the vessel (+2 max HP)', p.maxHp === m0 + 2, `${m0} -> ${p.maxHp}`); }
+
+for (const id of Object.keys(g.RELICS)) {
+  if (!RELIC_TESTS[id]) { check('relic ' + id, false, 'NO TEST WRITTEN — add one before shipping a new relic'); continue; }
+  try {
+    const p = fresh('pilgrim');
+    G.monsters.length = 0; // a clean chapel: no wandering teeth during relic math
+    const res = RELIC_TESTS[id](p);
+    check('relic ' + id, res === true);
+  } catch (e) {
+    check('relic ' + id, false, `threw: ${e.message}`);
+  }
+}
+
+// the offer flow itself
+{ const p = fresh('pilgrim');
+  const total00 = Object.values(p.relics || {}).reduce((a, b) => a + b, 0);
+  check('the road provides twice at every floor (sim path)', total00 === 2, JSON.stringify(p.relics));
+  check('the offer is once per floor', G.relicFloor === G.depth, `relicFloor ${G.relicFloor} depth ${G.depth}`);
+  G.relicFloor = 0; G.prostrated = true;
+  const total0 = Object.values(p.relics || {}).reduce((a, b) => a + b, 0);
+  g.offerRelics();
+  const total1 = Object.values(p.relics || {}).reduce((a, b) => a + b, 0);
+  check('a fresh floor grants exactly two relics', total1 === total0 + 2, `${total0} -> ${total1}`);
+  check('prayer is consumed by the offer', G.prostrated === false);
+  const src81 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+  check('prostration widens the offer to three (source)', src81.includes('const n = G.prostrated ? 3 : 2'));
+  // lethal venom must pass the death-save ladder (Vex round 2 major)
+  const p3 = fresh('pilgrim');
+  { G.monsters.length = 0;
+    p3.poison = 1; p3.hp = 1; p3.providence = false;
+    g.afterPlayerTurn();
+    check('lethal venom triggers Providence', p3.hp === 1 && p3.providence === true && G.state === 'PLAY', `hp ${p3.hp} prov ${p3.providence} state ${G.state}`); }
+  const p4 = fresh('warrior');
+  { G.monsters.length = 0;
+    g.applyBoon('b_second');
+    p4.poison = 1; p4.hp = 1; p4.secondWind = false;
+    g.afterPlayerTurn();
+    check('lethal venom triggers Second Wind (pre-existing hole, all classes)', p4.hp === 1 && p4.secondWind === true && G.state === 'PLAY', `hp ${p4.hp} sw ${p4.secondWind} state ${G.state}`); }
+
+  // the recoil: a goblin beside the kneeling pilgrim loses its reply
+  const p2 = fresh('pilgrim');
+  { const s = adjSpot(p2); const gob = g.spawnMonster('goblin', s[0], s[1]);
+    gob.awake = true; gob.stirring = false; gob.justWoke = false;
+    p2.hp = Math.max(5, p2.maxHp - 6); const hp0 = p2.hp;
+    G.monsters.length = 0; G.monsters.push(gob);
+    G.prostrated = false;
+    g.castProstrate(); // recoil eats the goblin's reply inside this turn's monstersAct
+    check('the dark recoils from the prayer', p2.hp >= hp0, `hp ${p2.hp} from ${hp0}`);
+    check('prayer mends the kneeling pilgrim', p2.hp > hp0, `hp ${p2.hp} from ${hp0}`);
+    G.monsters.length = 0; }
+  check('relics ride the save (source)', src81.includes('prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0'));
+}
 
 /* ---------- run: every boon must be known and truthful ---------- */
 console.log('=== boon truth harness ===');

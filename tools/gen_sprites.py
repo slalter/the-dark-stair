@@ -50,6 +50,7 @@ ENTITIES = {
     "player_rogue": "a hooded human rogue in dark green leathers gripping two daggers",
     "player_mage": "a human mage in flowing blue robes holding a glowing arcane staff",
     "player_gravedigger": "a grim human gravedigger in a tattered brown coat and wide-brimmed hat, gripping a long iron spade, lantern at his belt",
+    "player_pilgrim": "a humble human pilgrim in threadbare cream and ochre traveling robes, walking barefoot with a simple wooden staff and a small satchel, serene hooded face",
     "shambler": "a freshly-risen zombie shambler, earth-caked pale green flesh, slack jaw, grasping arms, grave dirt falling from it",
     "rat": "a hunched giant brown rat with bared teeth and a long tail",
     "bat": "a purple cave bat with spread wings and tiny fangs",

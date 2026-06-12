@@ -67,7 +67,7 @@ const code = ['core.js', 'data.js', 'dungeon.js', 'render.js', 'game.js']
 
 const EXPORTS = `
 return { G, RNG, newGame, startLevel, tryMove, afterPlayerTurn, attackMonster, castSpell, diagOpen, castCharge, castShadowDash,
-  castExhume, castLastRites,
+  castExhume, castLastRites, castProstrate,
   castCleave, useItem, descend, computeDistField, DIRS8, cheb, dist2, ITEMS, MONSTERS, CLASSES, T,
   FINAL_DEPTH, tileWalkable, monsterAt, recomputeFOV, spawnMonster, playerAtk, playerDef,
   addItem, generateMap, score, onEnterTile, makeElite, useShrine, openGoldChest, traceBeam, SPELLS, FX,
@@ -182,6 +182,12 @@ function botTurn(policy, stats) {
   const stackables = p.inventory.findIndex(e => ITEMS[e.id].kind === 'potion' && (e.id === 'potion_vigor' || e.id === 'elixir_str'));
   if (stackables >= 0) { useItem(stackables); return; } // permanent buffs: use immediately
   const vis = G.monsters.filter(m => !m.pet && G.visible.has(m.x + ',' + m.y));
+  if (!casual && G.classId === 'pilgrim' && !G.prostrated
+      && (!vis.length || (p.hp < p.maxHp * 0.45 && vis.some(m => cheb(m.x, m.y, p.x, p.y) <= 1)))) {
+    const t0 = G.turn;
+    game.castProstrate(); // quiet floor: bank the 3-gift prayer; cornered and bleeding: the recoil IS the prayer
+    if (G.turn > t0 || G.state !== 'PLAY') return;
+  }
   const adjAll = vis.filter(m => cheb(m.x, m.y, p.x, p.y) <= 1);
   const adj = adjAll.sort((a, b) => a.hp - b.hp)[0];
   // walk with your dead: a gravedigger raises whenever the grave allows —

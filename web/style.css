@@ -117,9 +117,9 @@ html, body {
 .diff-chip.selected[data-diff="nightmare"] { border-color: var(--red); color: var(--red); box-shadow: 0 0 12px rgba(227,93,106,.18); }
 
 /* ---------- class cards ---------- */
-#class-row { display: flex; gap: 14px; }
+#class-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; max-width: 1000px; }
 .class-card {
-  width: 196px;
+  width: 180px;
   background: rgba(15,15,26,.92);
   border: 1px solid #2c2c44;
   border-radius: 8px;

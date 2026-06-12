@@ -242,7 +242,7 @@ function offerBoons() {
     const id = RNG.weighted(pool);
     if (!seen.has(id)) { seen.add(id); picks.push(id); }
   }
-  if (IS_SIM) { applyBoon(RNG.pick(picks)); return; } // headless: take one at random
+  if (IS_SIM) { applyBoon(RNG.pick(picks)); if (G.classDef.pilgrim) offerRelics(); return; } // headless: take one at random
   G.state = 'BOON';
   cancelTravel();
   const row = $('boon-row');
@@ -259,15 +259,112 @@ function offerBoons() {
     row.appendChild(card);
   });
   G.boonPicks = picks;
+  $('boon-screen').querySelector('h1').textContent = 'THE DARK OFFERS GIFTS';
+  $('boon-screen').querySelector('.tagline').textContent = 'Choose one. It will not offer twice.';
   $('boon-screen').classList.remove('hidden');
   Sfx.scroll();
 }
+/* ---------- relics: the road provides (pilgrim only) ---------- */
+const relicCount = id => (G.player && G.player.relics && G.player.relics[id]) || 0;
+function applyRelic(id) {
+  const p = G.player;
+  p.relics = p.relics || {};
+  p.relics[id] = (p.relics[id] || 0) + 1;
+  // every blessing fortifies the vessel: +2 max HP rides on EVERY relic
+  p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2);
+  if (id === 'r_hide') { p.maxHp += 6; p.hp = Math.min(p.maxHp, p.hp + 6); }
+  if (id === 'r_alms') earnGold(35);
+  addMsg(`The road provides: ${RELICS[id].name} — ${RELICS[id].desc}.`, 'm-gold');
+  spawnFloater(p.x, p.y, RELICS[id].name.toUpperCase(), '#e8d9a8', 13);
+}
+function offerRelics() {
+  if (!G.classDef.pilgrim) return;
+  if (G.relicFloor !== G.depth) { G.relicFloor = G.depth; G.relicGiven = 0; }
+  if (G.relicGiven >= 2) return; // matins and vespers: two stones at every floor's gate
+  const n = G.prostrated ? 3 : 2;
+  G.prostrated = false;
+  const ids = Object.keys(RELICS);
+  const picks = [];
+  while (picks.length < n) {
+    const id = RNG.pick(ids);
+    if (!picks.includes(id)) picks.push(id);
+  }
+  if (IS_SIM) {
+    applyRelic(RNG.pick(picks));
+    G.relicGiven = (G.relicGiven || 0) + 1;
+    offerRelics(); // the second stone, if it remains
+    return;
+  }
+  G.state = 'RELIC';
+  cancelTravel();
+  $('boon-screen').querySelector('h1').textContent = 'THE ROAD PROVIDES';
+  $('boon-screen').querySelector('.tagline').textContent =
+    n === 3 ? 'Your prayers were heard — three gifts lie on the wayside stone.'
+            : 'A relic for the faithful. Free — the road keeps no ledger.';
+  const row = $('boon-row');
+  row.innerHTML = '';
+  picks.forEach((id, i) => {
+    const r = RELICS[id];
+    const owned = relicCount(id);
+    const card = document.createElement('button');
+    card.className = 'boon-card';
+    card.innerHTML = `<div class="b-key">[${i + 1}]</div>` +
+      `<div class="b-rarity common">RELIC${owned ? ' ×' + (owned + 1) : ''}</div>` +
+      `<div class="b-name">${r.name}</div>` +
+      `<div class="b-desc">${r.desc}${owned ? ' — stacks with the ' + owned + ' you carry' : ''}</div>`;
+    card.addEventListener('click', ev => { ev.currentTarget.blur(); pickRelic(id); });
+    row.appendChild(card);
+  });
+  G.relicPicks = picks;
+  G.relicShownAt = Date.now();
+  $('boon-screen').classList.remove('hidden');
+  Sfx.shrine ? Sfx.shrine() : Sfx.scroll();
+}
+function pickRelic(id) {
+  if (G.relicShownAt && Date.now() - G.relicShownAt < 500) return; // same mash-through guard as boons
+  if (G.state !== 'RELIC') return;
+  $('boon-screen').classList.add('hidden');
+  G.relicPicks = null;
+  G.state = 'PLAY';
+  applyRelic(id);
+  updateUI(); // a stacking class stares at this panel mid-draft (Tessa)
+  G.relicGiven = (G.relicGiven || 0) + 1;
+  offerRelics(); // the second stone, if it remains
+  if (G.state === 'RELIC') return;
+  recomputeFOV();
+  updateUI();
+  saveRun();
+}
+function castProstrate() {
+  if (G.state !== 'PLAY' || !G.classDef.pilgrim) return;
+  if (G.prostrated) { addMsg('You have already prayed — the road heard you. Descend.', 'm-dim'); return; }
+  cancelTravel();
+  G.prostrated = true;
+  Sfx.scroll();
+  // the unclean cannot bear the prayer: everything beside you recoils
+  let recoiled = 0;
+  for (const m of G.monsters) {
+    if (m.pet || m.boss || cheb(m.x, m.y, G.player.x, G.player.y) > 1) continue;
+    m.skipT = Math.max(m.skipT || 0, 2); m.stirring = true; recoiled++;
+  }
+  if (recoiled) addMsg(`The dark RECOILS from the prayer — ${recoiled} ${recoiled === 1 ? 'foe staggers' : 'foes stagger'} back!`, 'm-gold');
+  if (G.player.hp < G.player.maxHp) {
+    const ph = Math.min(G.player.maxHp - G.player.hp, 4);
+    G.player.hp += ph;
+    addMsg(`You kneel on the cold stone and pray — ${ph} HP returns with your breath. The NEXT wayside stone will bear three gifts.`, 'm-gold');
+  } else addMsg('You kneel on the cold stone and pray. The NEXT wayside stone will bear three gifts.', 'm-gold');
+  spawnFloater(G.player.x, G.player.y, 'PROSTRATE', '#e8d9a8', 13);
+  afterPlayerTurn();
+}
+
 function pickBoon(id) {
   if (G.boonShownAt && Date.now() - G.boonShownAt < 500) return; // mash-through guard (fresh-eyes: picked Blood Pact without seeing the cards)
   if (G.state !== 'BOON') return;
   $('boon-screen').classList.add('hidden');
+  G.boonPicks = null;
   G.state = 'PLAY';
   applyBoon(id);
+  if (G.classDef.pilgrim) { offerRelics(); if (G.state === 'RELIC') return; }
   recomputeFOV();
   updateUI();
   saveRun();
@@ -480,12 +577,14 @@ const dreadShift = () => (hasBoon('b_fleet') ? 40 : 0) + (hasBoon('b_reaper') ? 
 const hasBoon = id => !!(G.player && G.player.boons && G.player.boons[id]);
 const playerAtk = () => G.player.baseAtk + (G.player.weapon ? ITEMS[G.player.weapon].bonus : 0) + (ringIs('ring_might') ? 2 : 0)
   + (hasBoon('b_momentum') ? G.player.momentum : 0)
-  + (hasBoon('b_adrenal') && G.player.hp < G.player.maxHp * 0.3 ? 3 : 0);
+  + (hasBoon('b_adrenal') && G.player.hp < G.player.maxHp * 0.3 ? 3 : 0)
+  + relicCount('r_sting') + (G.player.hp < G.player.maxHp * 0.3 ? 2 * relicCount('r_zeal') : 0);
 const playerDef = () => G.player.baseDef + (G.player.armor ? ITEMS[G.player.armor].bonus : 0) + (ringIs('ring_guard') ? 2 : 0)
+  + relicCount('r_ward')
   + (G.player.bulwarkT > 0 ? 3 : 0)
   // grave-ward: while a shambler walks, the dead absorb part of every blow
   + (G.classDef && G.classDef.digger && G.monsters.some(o => o.pet) ? 1 : 0);
-const playerDodge = () => clamp(G.player.dodge + (hasBoon('b_fleet') ? 0.15 : 0)
+const playerDodge = () => clamp(G.player.dodge + 0.04 * relicCount('r_quick') + (hasBoon('b_fleet') ? 0.15 : 0)
   + (hasBoon('b_ghost') ? 0.08 : 0) - (hasBoon('b_shadow') ? 0.08 : 0)
   + (ringIs('ring_swift') ? 0.08 : 0)
   - (G.map && G.map.get(G.player.x, G.player.y) === T.WATER ? 0.15 : 0), 0, 0.75);
@@ -495,7 +594,7 @@ const score = () => Math.round(G.diff.scoreMult * (
   (G.state === 'WIN' ? 250 + Math.max(0, 2500 - 2 * G.turn) : 0) // tempo audit: at 1000-flat, farming out-paid speed on every floor
 ));
 function earnGold(n) {
-  n = Math.ceil(n * (1 + (hasBoon('b_purse') ? 0.3 : 0) + (hasBoon('b_greed') ? 0.6 : 0)));
+  n = Math.ceil(n * (1 + (hasBoon('b_purse') ? 0.3 : 0) + (hasBoon('b_greed') ? 0.6 : 0) + 0.1 * relicCount('r_beacon')));
   G.player.gold += n; G.goldEarned += n;
 }
 // Midas Hunger's other edge: merchants smell the greed and charge for it
@@ -528,6 +627,7 @@ function newGame(classId) {
   }
   G.classId = classId;
   G.classDef = CLASSES[classId];
+  G.prostrated = false; G.relicFloor = 0; G.relicGiven = 0;
   G.fovRadius = G.classDef.fov;
   $('log').innerHTML = '';
   G.state = 'PLAY';
@@ -800,14 +900,14 @@ function makeElite(m, givesKey) {
 const monsterAt = (x, y) => G.monsters.find(m => m.x === x && m.y === y);
 
 function recomputeFOV() {
-  G.fovRadius = clamp(G.classDef.fov + (G.map.theme.fovMod || 0) + (ringIs('ring_focus') ? 1 : 0), 5, 12);
+  G.fovRadius = clamp(G.classDef.fov + (G.map.theme.fovMod || 0) + (ringIs('ring_focus') ? 1 : 0) + relicCount('r_lantern'), 5, 12);
   G.visible = computeFOV(G.map, G.player.x, G.player.y, G.fovRadius);
   for (const key of G.visible) {
     const [x, y] = key.split(',');
     const i = G.map.idx(+x, +y);
     G.map.explored[i] = 1;
     G.map.fovSeen[i] = 1;
-    if (G.classDef && G.classDef.senses && G.map.tiles[i] === T.TRAP && !G.map.trapSeen[i]) {
+    if (G.classDef && (G.classDef.senses || relicCount('r_clarity') > 0) && G.map.tiles[i] === T.TRAP && !G.map.trapSeen[i]) {
       G.map.trapSeen[i] = 1;
       addMsg('Your instincts prickle — a trap lies near.', 'm-good');
     }
@@ -1038,14 +1138,20 @@ function afterPlayerTurn() {
       addMsg(G.clockSpawns > 2 ? 'The dark is done waiting — something WORSE has your scent.' : 'Something in the dark has caught your scent.', 'm-bad');
     }
   }
-  // poison ticks
+  // poison ticks — lethal venom must pass the death-save ladder
+  // (Providence / Second Wind) like every other harm, so the tick that
+  // would kill routes through hurtPlayer (Vex round 2: venom skipped both)
   if (p.poison > 0) {
     p.poison--;
-    p.hp--;
-    G.floorDmg += 1; // venom counts against flawless floors too
-    spawnFloater(p.x, p.y, '☠1', '#8fe05e');
+    if (p.hp <= 1) {
+      hurtPlayer(1, 'venom');
+      if (G.state !== 'PLAY') return;
+    } else {
+      p.hp--;
+      G.floorDmg += 1; // venom counts against flawless floors too
+      spawnFloater(p.x, p.y, '☠1', '#8fe05e');
+    }
     if (p.poison === 0) addMsg('The venom finally burns itself out.', 'm-good');
-    if (p.hp <= 0) { p.hp = 0; die('venom'); return; }
   }
   // regeneration (slow — the depths do not forgive idleness)
   if (G.turn % (hasBoon('b_regen') ? 8 : 15) === 0 && p.hp < p.maxHp && p.hp > 0) p.hp++;
@@ -1082,8 +1188,10 @@ function attackMonster(m, bonus = 0) {
   const p = G.player;
   const backstab = G.classId === 'rogue' && (!m.awake || m.frozen > 0 || m.stirring || p.vaultStrike > 0);
   if (G.classId === 'rogue' && p.vaultStrike > 0) p.vaultStrike = 0; // one strike per vault
-  const crit = !backstab && RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0));
+  const crit = !backstab && RNG.chance(p.crit + (hasBoon('b_keen') ? 0.12 : 0) + 0.08 * relicCount('r_psalter'));
   let dmg = Math.max(1, playerAtk() + bonus + RNG.int(-1, 2) - m.def);
+  if (RELIC_BEASTS.has(m.id) && relicCount('r_beastbane')) dmg += 2 * relicCount('r_beastbane');
+  if (RELIC_BONES.has(m.id) && relicCount('r_bonebane')) dmg += 2 * relicCount('r_bonebane');
   if (m.frozen > 0 && hasBoon('b_frost')) dmg += 2;
   if (backstab) dmg *= (hasBoon('b_shadow') ? 4 : 3) + (p.weapon && ITEMS[p.weapon].trait === 'shadow' ? 1 : 0);
   else if (crit) dmg *= 2;
@@ -1277,6 +1385,15 @@ function hurtPlayer(dmg, srcName) {
   addShake(3);
   Sfx.hurt();
   spawnFloater(p.x, p.y, String(dmg), '#ff5252');
+  // PROVIDENCE (pilgrim passive): once per run, the road spares the faithful
+  if (p.hp <= 0 && G.classDef && G.classDef.pilgrim && !p.providence) {
+    p.providence = true;
+    p.hp = 1;
+    addMsg('PROVIDENCE — the blow that should have ended you glances away. The road spares you ONCE.', 'm-gold');
+    spawnFloater(p.x, p.y, 'PROVIDENCE', '#e8d9a8', 17);
+    Sfx.levelup();
+    return;
+  }
   if (p.hp <= 0 && hasBoon('b_second') && !p.secondWind) {
     p.secondWind = true;
     p.hp = 1;
@@ -1464,6 +1581,11 @@ function descend() {
   if (darkPlunge) G.darkUsed = true; // the dark grants ONE shortcut a run — skip-skip gutted the game
   if (darkPlunge) G.darkNext = true;
   if (G.monsters.some(o => o.pet)) addMsg('Your shamblers cannot follow — the dead keep to their floor.', 'm-dim');
+  if (relicCount('r_soles') && G.player.hp < G.player.maxHp) {
+    const sh = Math.min(G.player.maxHp - G.player.hp, 3 * relicCount('r_soles'));
+    G.player.hp += sh;
+    addMsg(`The road carries you — your soles mend ${sh} HP as you descend.`, 'm-good');
+  }
   Sfx.stairs();
   if (G.floorDmg === 0 && G.turn > 0) {
     G.bonusScore += 40;
@@ -2189,7 +2311,7 @@ function useItem(index) {
     // a 1-HP sip wastes a whole potion (mobile playtest drank at 62/63)
     if (p.hp >= p.maxHp - 2) { addMsg('Barely a scratch — best save it.', 'm-dim'); return; }
     G.potionsDrunk++;
-    const heal = Math.min(p.maxHp - p.hp, Math.round((14 + 2 * G.depth) * (G.diff.potionMult || 1) * ((hasBoon('b_pact') || hasBoon('b_regen')) ? 0.5 : 1)));
+    const heal = Math.min(p.maxHp - p.hp, Math.round((14 + 2 * G.depth + 4 * relicCount('r_chalice')) * (G.diff.potionMult || 1) * ((hasBoon('b_pact') || hasBoon('b_regen')) ? 0.5 : 1)));
     p.hp += heal;
     addMsg(`You drink the potion and recover ${heal} HP.`, 'm-good');
     Sfx.potion();
@@ -2592,7 +2714,12 @@ function monstersAct() {
           spawnFloater(p.x, p.y, 'POISONED', '#8fe05e');
         }
       }
-      // Iron Thorns: melee attackers pay in kind
+      // Iron Thorns / Crown of Briars: melee attackers pay in kind
+      if (relicCount('r_thorn')) {
+        m.hp -= relicCount('r_thorn'); m.flashT = 1;
+        spawnFloater(m.x, m.y, String(relicCount('r_thorn')), '#e8d9a8');
+        if (m.hp <= 0) { killMonster(m); continue; }
+      }
       if (hasBoon('b_thorns')) {
         m.hp -= 2; m.flashT = 1;
         spawnFloater(m.x, m.y, '2', '#c98a5e');
@@ -3062,6 +3189,11 @@ function buildSpellPanel() {
     addRow('[V]', `${ABILITY_GLYPHS.cleave} Cleave`, 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
     addRow('[B]', `${ABILITY_GLYPHS.charge} Shield Charge`, 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
     addRow('[G]', `${ABILITY_GLYPHS.bulwark} Bulwark`, 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
+  } else if (G.classId === 'pilgrim') {
+    addRow('[V]', `${ABILITY_GLYPHS.prostrate} Prostrate`, '1/floor', 'kneel and pray (costs the turn): adjacent foes RECOIL two turns, 4 HP returns, and the NEXT wayside stone bears three gifts', () => castProstrate(), 'prostrate-row');
+    addRow('—', 'The Road Provides', '·', 'passive: TWO free relic offers at every floor\'s start — and EVERY relic also fortifies you (+2 max HP)', null);
+    addRow('—', 'Providence', '1', 'passive: ONCE per run, a killing blow leaves you at 1 HP instead — the road spares the faithful', null);
+    addRow('—', 'Owned relics', '·', 'passive: hover your relic list under the boons panel to recall what you carry', null);
   } else if (G.classId === 'gravedigger') {
     addRow('[V]', `${ABILITY_GLYPHS.exhume} Exhume`, 'ready', 'raise a shambler from a corpse in sight (≤4 tiles) — it hunts beside you, then crumbles', () => castExhume(), 'exhume-row');
     addRow('[B]', `${ABILITY_GLYPHS.rites} Last Rites`, 'ready', 'consume a corpse at your side: +6 HP — the grave gives, and the grave takes back', () => castLastRites(), 'rites-row');
@@ -3126,6 +3258,11 @@ function updateUI() {
     ritesRow.classList.toggle('cant', p.ritesCd > 0);
     ritesRow.querySelector('.cost').textContent = p.ritesCd > 0 ? p.ritesCd + 't' : 'ready';
   }
+  const prosRow = $('prostrate-row');
+  if (prosRow) {
+    prosRow.classList.toggle('cant', !!G.prostrated);
+    prosRow.querySelector('.cost').textContent = G.prostrated ? '✓ prayed' : '1/floor';
+  }
   const bulwarkRow = $('bulwark-row');
   if (bulwarkRow) {
     bulwarkRow.classList.toggle('cant', p.guardCd > 0);
@@ -3186,7 +3323,11 @@ function updateUI() {
   const ob = $('owned-boons');
   if (ob) {
     const ids = Object.keys(p.boons || {});
-    ob.innerHTML = ids.length ? ids.map(id => `<span class="boon-chip" title="${BOONS[id].desc}">${BOONS[id].name}</span>`).join('') : '';
+    let chips = ids.map(id => `<span class="boon-chip" title="${BOONS[id].desc}">${BOONS[id].name}</span>`);
+    // the pilgrim's relics live beside the boons — stacked counts on the chip
+    const rids = Object.keys(p.relics || {});
+    chips = chips.concat(rids.map(id => `<span class="boon-chip" style="border-color:#e8d9a866" title="${RELICS[id].desc}">${RELICS[id].name}${p.relics[id] > 1 ? ' ×' + p.relics[id] : ''}</span>`));
+    ob.innerHTML = chips.length ? chips.join('') : '';
   }
   drawMinimap();
 }
@@ -3305,7 +3446,7 @@ function saveRun() {
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
       shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0, dailyPractice: !!G.dailyPractice,
-      corpses: G.corpses,
+      corpses: G.corpses, prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -3338,6 +3479,7 @@ function loadRun() {
   G.shrineArmed = s.shrineArmed || {};
   G.lichSaid = s.lichSaid || {}; G.echo = s.echo || null; G.darkNext = !!s.darkNext; G.corpses = s.corpses || [];
   G.bestiaryRun = s.bestiaryRun || {}; // a resumed run must keep killing cleanly (Vex blocker: undefined here threw in killMonster)
+  G.prostrated = !!s.prostrated; G.relicFloor = s.relicFloor || 0; G.relicGiven = s.relicGiven || 0;
   G.dailyBase = s.dailyBase != null ? s.dailyBase : null;
   G.projectiles = (s.projectiles || []).map(pr => ({ ...pr, src: null }));
   G.shells = s.shells || [];
@@ -3601,7 +3743,7 @@ fitView();
 // one icon language everywhere: HUD buttons, sidebar rows, help (widget 7406d6fd)
 const ABILITY_GLYPHS = {
   spells: ['✦', '❅', '✚', '✷'], // bolt, nova, mend, blink
-  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴', exhume: '⛏', rites: '✟',
+  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴', exhume: '⛏', rites: '✟', prostrate: '🙏',
 };
 
 const MOVE_KEYS = {
@@ -3781,6 +3923,8 @@ function toggleHelp() {
       ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] steps you to a tile YOU choose (hover/tap it first, ≤4). Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
       ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you BEHIND a foe up to 3 tiles out — even one beside you — and strikes as you land. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      : G.classId === 'pilgrim'
+      ? '<b style="color:var(--gold)">Your craft (pilgrim).</b> You start with nothing: 30 HP, bare hands, no armor. But the road provides — at every floor\'s first step a wayside stone offers a FREE relic, and relics stack forever: two Nettle Stings are +2 attack, three Oxhide Pages are +18 HP. Prostrate [V] spends a turn in prayer: foes beside you RECOIL for two turns, 4 HP returns with your breath, and the NEXT stone bears three gifts — once per floor, so choose the moment: escape hatch or richer offering. The early floors will try to kill you — but ONCE per run, Providence turns a killing blow into 1 HP. The build that survives the start is unlike anyone else\'s.'
       : G.classId === 'gravedigger'
       ? '<b style="color:var(--gold)">Your craft (gravedigger).</b> Every kill leaves a corpse for 18 turns — your larder. Exhume [V] raises a shambler from a corpse in sight (≤4 tiles, two at most): it hunts beside you, draws blades that would find you, and BURSTS in grave-rot when it falls. Last Rites [B] eats a corpse beside you for +6 HP. While a shambler walks you take 1 less from every blow. The ledger: shambler kills earn you NO score or embers — finish the worthy foes yourself, and feed the rest to the dead.'
       : G.classId === 'warrior'
@@ -3810,7 +3954,15 @@ window.addEventListener('keydown', ev => {
   Sfx.ensure(); Music.start();
 
   if (G.state === 'CUTSCENE') { ev.preventDefault(); skipCutsceneLine(); return; }
+  if (G.state === 'RELIC') {
+    if (key === 'escape' && !$('help-screen').classList.contains('hidden')) { toggleHelp(); return; }
+    if (/^[1-3]$/.test(key) && G.relicPicks && G.relicPicks[+key - 1]) { pickRelic(G.relicPicks[+key - 1]); return; }
+    if (ev.key === '?') { toggleHelp(); return; }
+    addMsg('The road waits — click a relic or press 1-' + ((G.relicPicks || []).length || 2) + '.', 'm-dim');
+    return;
+  }
   if (G.state === 'BOON') {
+    if (key === 'escape' && !$('help-screen').classList.contains('hidden')) { toggleHelp(); return; }
     if (/^[1-4]$/.test(key) && G.boonPicks && G.boonPicks[+key - 1]) { pickBoon(G.boonPicks[+key - 1]); return; }
     if (ev.key === '?') { toggleHelp(); return; }
     addMsg('Choose a gift first — click a card or press 1-' + ((G.boonPicks || []).length || 3) + '.', 'm-dim');
@@ -3851,6 +4003,7 @@ window.addEventListener('keydown', ev => {
     else if (key === '2') newGame('rogue');
     else if (key === '3') newGame('mage');
     else if (key === '4') newGame('gravedigger');
+    else if (key === '5') newGame('pilgrim');
     return;
   }
   if (G.state === 'DEAD' || G.state === 'WIN') {
@@ -3881,6 +4034,7 @@ window.addEventListener('keydown', ev => {
     if (G.classId === 'warrior') castCleave();
     else if (G.classId === 'mage') castSpell(3);
     else if (G.classId === 'gravedigger') castExhume();
+    else if (G.classId === 'pilgrim') castProstrate();
     else castShadowDash();
     return;
   }
@@ -4237,6 +4391,9 @@ let joySuppressClick = false;
         'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade');
       add(ABILITY_GLYPHS.vault, 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null,
         'leap clean over an adjacent foe \u2014 your strike on arrival is a backstab');
+    } else if (G.classId === 'pilgrim') {
+      add(ABILITY_GLYPHS.prostrate, 'Prostrate', () => castProstrate(), p2 => G.prostrated ? { txt: '\u2713' } : null,
+        'kneel and pray (costs the turn): adjacent foes RECOIL two turns, 4 HP returns, and the NEXT wayside stone bears three gifts');
     } else if (G.classId === 'gravedigger') {
       add(ABILITY_GLYPHS.exhume, 'Exhume', () => castExhume(), p => p.exhumeCd > 0 ? { txt: p.exhumeCd, cant: true } : null,
         'raise a shambler from a corpse in sight (\u22644 tiles) \u2014 it hunts beside you, then crumbles');
