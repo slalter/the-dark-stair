@@ -31,7 +31,7 @@ from typing import cast
 
 from PIL import Image
 
-PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")  # your GCP project (Vertex AI enabled)
+PROJECT = "gurucloudai-live"
 MODEL = "imagen-3.0-generate-002"
 ENDPOINT = (
     f"https://us-central1-aiplatform.googleapis.com/v1/projects/{PROJECT}"
@@ -49,6 +49,8 @@ ENTITIES = {
     "player_warrior": "a stalwart human warrior in battered steel armor with sword and round shield, gold-yellow cloak",
     "player_rogue": "a hooded human rogue in dark green leathers gripping two daggers",
     "player_mage": "a human mage in flowing blue robes holding a glowing arcane staff",
+    "player_gravedigger": "a grim human gravedigger in a tattered brown coat and wide-brimmed hat, gripping a long iron spade, lantern at his belt",
+    "shambler": "a freshly-risen zombie shambler, earth-caked pale green flesh, slack jaw, grasping arms, grave dirt falling from it",
     "rat": "a hunched giant brown rat with bared teeth and a long tail",
     "bat": "a purple cave bat with spread wings and tiny fangs",
     "goblin": "a small wiry green goblin clutching a crude wooden club",
@@ -77,12 +79,12 @@ PROPS = {
     "weapon": "a single steel shortsword item icon, point down, no character, no hands, just the sword",
     "armor": "a steel cuirass breastplate armor piece lying flat as an item icon, empty armor with no person inside, NO head, NO arms, NO legs, NO face",
     "ring": "a golden ring with a glowing gem",
-    "gold": "a small neat pile of round flat gold coins, several coins clearly visible, classic RPG treasure icon, NO flames, NO creature",
+    "gold": "a tidy stack of shiny round GOLD COINS, three coins standing on edge against a small pile, bright metallic yellow-gold with clear circular coin faces, classic videogame money icon, NO fire, NO sparks",
     "gilded": "a fallen adventurer's skeleton slumped against stone in fine gold-trimmed clothes, clutching a glittering jeweled sword, faint gold glint",
-    "shrine": "a small dark stone altar with a glowing emerald-green crystal on top, blood-stained base",
+    "shrine": "a small gothic stone ALTAR shrine: stepped pedestal base, two tiny candles, a glowing blood-red orb floating above the altar slab, clearly a place of dark worship, NO creature",
     "trap": "an iron spike trap floor plate with short rusted spikes pointing up, top-down view",
-    "stairs": "stone steps descending into darkness viewed from the side, four clearly visible rectangular stair steps going down under a dark archway, dungeon staircase, NO gem, NO crystal",
-    "darkstairs": "steep crumbling stone STEPS descending into red-glowing darkness viewed from the side, five clearly visible stair steps going down, ominous red light rising from below, NO door, NO gate, NO lock",
+    "stairs": "a classic dungeon STAIRCASE icon: five wide stone steps descending left-to-right into black shadow, each step edge highlighted, unmistakable stairway silhouette, NO arch, NO door, NO gem",
+    "darkstairs": "a classic dungeon STAIRCASE icon: five wide cracked stone steps descending left-to-right, eerie BLOOD-RED light blazing up from between the lower steps, unmistakable stairway silhouette, NO arch, NO door, NO portal",
 }
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -67,6 +67,7 @@ const code = ['core.js', 'data.js', 'dungeon.js', 'render.js', 'game.js']
 
 const EXPORTS = `
 return { G, RNG, newGame, startLevel, tryMove, afterPlayerTurn, attackMonster, castSpell, diagOpen, castCharge, castShadowDash,
+  castExhume, castLastRites,
   castCleave, useItem, descend, computeDistField, DIRS8, cheb, dist2, ITEMS, MONSTERS, CLASSES, T,
   FINAL_DEPTH, tileWalkable, monsterAt, recomputeFOV, spawnMonster, playerAtk, playerDef,
   addItem, generateMap, score, onEnterTile, makeElite, useShrine, openGoldChest, traceBeam, SPELLS, FX,
@@ -158,6 +159,12 @@ function botTurn(policy, stats) {
     if (i >= 0) { useItem(i); stats.potions++; return; }
     if (p.maxMana && p.mana >= COST[2] && p.hp < p.maxHp) { castSpell(2); return; }
   }
+  // gravedigger: rites are cheaper than potions — spend the dead first
+  if (G.classId === 'gravedigger' && p.ritesCd === 0 && p.hp < p.maxHp * 0.75) {
+    const t0 = G.turn;
+    game.castLastRites();
+    if (G.turn > t0 || G.state !== 'PLAY') return;
+  }
   if (p.poison > 2) {
     const i = p.inventory.findIndex(e => e.id === 'potion_anti');
     if (i >= 0) { useItem(i); return; }
@@ -174,9 +181,18 @@ function botTurn(policy, stats) {
   }
   const stackables = p.inventory.findIndex(e => ITEMS[e.id].kind === 'potion' && (e.id === 'potion_vigor' || e.id === 'elixir_str'));
   if (stackables >= 0) { useItem(stackables); return; } // permanent buffs: use immediately
-  const vis = G.monsters.filter(m => G.visible.has(m.x + ',' + m.y));
+  const vis = G.monsters.filter(m => !m.pet && G.visible.has(m.x + ',' + m.y));
   const adjAll = vis.filter(m => cheb(m.x, m.y, p.x, p.y) <= 1);
   const adj = adjAll.sort((a, b) => a.hp - b.hp)[0];
+  // walk with your dead: a gravedigger raises whenever the grave allows —
+  // pre-raised shamblers carry grave-ward into the NEXT fight
+  if (!casual && G.classId === 'gravedigger' && p.exhumeCd === 0
+      && G.monsters.filter(o => o.pet).length < 2
+      && G.corpses.some(c => G.visible.has(c.x + ',' + c.y) && cheb(c.x, c.y, p.x, p.y) <= 4)) {
+    const t0 = G.turn;
+    game.castExhume();
+    if (G.turn > t0 || G.state !== 'PLAY') return;
+  }
   if (adj) {
     if (!casual && G.classId === 'warrior' && p.cleaveCd === 0 && adjAll.length >= 2) { game.castCleave(); return; }
     if (!casual && p.maxMana && p.mana >= COST[1] && vis.filter(m => cheb(m.x, m.y, p.x, p.y) <= 2).length >= 2) { castSpell(1); return; }

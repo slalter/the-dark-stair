@@ -62,3 +62,168 @@ mage spell scaling + kill-siphon, melee tempo abilities) moved every
 distribution from mid-floor walls to Lich-gated curves without breaking
 nightmare. Standard's no-dodge winrate (~10%) is the intended lower bound
 for a skilled-human ~40-55% target. No tuning changes recommended.
+
+
+## Spot-check — 2026-06-11 PM (post mage-siphon nerf, iters 39-41 in)
+
+| config | result | vs 06-12 battery |
+|---|---|---|
+| mage standard | 0W · 11/20 boss reach · F6-heavy | reach 7→11, still 0W at the bound — healthiest mage curve yet |
+| mage story | 3W · 17/20 boss reach · F6-heavy | 8W→3W: the siphon nerf softened story wins without any F3 regression |
+
+Verdict: kill-siphon 2→1 landed as intended; no compensation needed.
+(Raw: mage-postnerf-2026-06-11.jsonl)
+
+## Class defenses battery — 2026-06-11 PM (iter53: block/ward/dodge identities)
+
+| config | result | note |
+|---|---|---|
+| warrior standard | 4W/20 (20%) · F6-gated (11/16) | block @ 1+ceil(armor/2): first cut 2+armor sim'd 40% std / **25% nightmare** — rejected, halved |
+| warrior nightmare | 2W/20 (10%) · deaths F4-F5 heavy | the dark still wins; block matters least vs packs by design |
+| mage standard | 2W/20 (10%) · F6-gated | ward (1 mana per 2 dmg, max half) — first standard mage wins ever |
+| mage nightmare | 0W/20 · unchanged shape | ward doesn't break the top end |
+| rogue standard | 0W/20 (control) | untouched — dodge identity already existed |
+
+Verdict: every class now has a defensive identity (warrior BLOCK first-hit-per-turn,
+mage WARD mana-as-armor, rogue DODGE) with assertions in boon_check.js (9 checks,
+untested = fail). Warrior std 10%→20% is the intended magnitude of the buff.
+
+## Itemization battery — 2026-06-11 PM (iter55: trait weapons, rings, Sanctum tree, ACTIVES)
+
+| config | result | note |
+|---|---|---|
+| warrior standard | 4W/20 (20%) · 15/16 deaths on F6 vs Lich | cleanest Lich-gated curve yet; Bulwark active in kit |
+| rogue standard | 3W/20 (15%) | **first standard rogue wins ever** — Vault (escape) + twin fangs (×4 backstab) |
+| mage standard | 0W/19D/**1S**, then 0W/30D/0S on repro | the 1 stall did NOT reproduce (1 in 50 vs historic 0 in 200+) — WATCH ITEM, not a blocker |
+
+Verdict: every class now wins standard at bot level except mage (2W earlier today,
+0W here — bound noise). Actives (Bulwark/Vault) + trait weapons shipped with 14
+harness assertions; warrior unchanged at 20% confirms the items don't compound
+the block buff.
+
+## Vault-backstab spot-check — 2026-06-11 PM (iter58, post veteran playtest)
+
+| config | result | note |
+|---|---|---|
+| rogue standard | 1W/20 (5%) · 12/19 deaths AT the Lich | bot barely vaults — buff is human-facing; curve is the most Lich-gated rogue has ever been |
+| rogue nightmare | 0W/20 | unchanged; the dark still wins |
+
+Verdict: vault-backstab (one true backstab per vault, window = next strike)
+ships without bot-level overshoot. Veteran persona identified the rogue's
+missing elite damage loop; this is the targeted fix.
+
+## Fleet round + melee-siphon spot-check — 2026-06-11 PM (iter60)
+
+| config | result | note |
+|---|---|---|
+| mage standard | 1W/20 (5%) · 0 stalls | post caster-melee-siphon (+1 mana per staff/orb bump); buff is skill-facing, bot barely melees |
+| mage nightmare | 0W/20 · 0 stalls | unchanged |
+
+Persona fleet verdicts (3 agents on live build): exploit hunter 1 CONFIRMED
+(staff-swap mana mint — fixed, capacity-only equip) / 18 DEFENDED; mobile
+confirmation 8/11 VERIFIED + vault-backstab VERIFIED (drawer trap + landscape
+found and fixed same hour); mage persona WON a Veteran run (first persona win),
+FUN 8/10. Watch items: log-echo (unreproduced), warrior+maul Lich cadence,
+Blink "dead spell" verdict (design pass pending).
+
+## Two-ring + mechanic-boons spot-check — 2026-06-11 PM (iter61)
+
+| config | result | note |
+|---|---|---|
+| warrior standard | 3W/20 (15%) | bot now wears 2 rings (sim policy updated); no inflation vs 20% baseline |
+| rogue standard | 1W/20 (5%) | consistent with post-vault-backstab bound |
+
+Verdict: the second ring finger is a build-depth add, not a power spike, at
+bot level. Six mechanic boons shipped with truth-harness assertions (stagger
+boons assert the skip's EFFECT — skipT is consumed by the cast's own turn).
+
+## Dash rework spot-check — 2026-06-11 PM (iter62, live rogue-session whispers)
+
+| config | result | note |
+|---|---|---|
+| rogue standard | 0W/20 · 0 stalls | dash auto-strike + behind-landing + range 1 don't inflate the bot; band holds (0-15%) |
+
+## Detection rework battery — 2026-06-12 AM (iter63, 'Warden' stealth audit)
+
+Warden's instrumented audit (7 runs, ~2,600 turns, ~30 measured wake events):
+chase pathing, corner rule, charger/lobber/ranged telegraphs all PASS clean;
+detection was the entire "feels off" — notice was an RNG gate (dominant wake
+distance 1.0-1.41 vs the stated sight−2), wake order was act→stir, and
+cries/screams ignored walls.
+
+| config | result | note |
+|---|---|---|
+| warrior standard | 2W/20 (10%) | stir-beats (monsters forfeit the wake turn) don't trivialize |
+| rogue standard | 2W/20 (10%) | certain knife-range notice doesn't tank the approach |
+| mage standard | 0W/20 | bound unchanged · zero stalls everywhere |
+
+Shipped: certain notice at d≤2 (dice only 2..sight band), notice→stir→act with
+a uniform chain-wake beat (m.justWoke), cryReaches() LOS-gating cries AND
+screams, true post-whiff rest for all heavies, Gruk leash hysteresis (≤4
+return). 6 new harness assertions.
+
+## Round-2 confirmation — 2026-06-12 AM (iter65, Warden's re-audit)
+
+Warden re-verified all five iter63 fixes on live: notice→stir→act VERIFIED
+(8+ instrumented notices), uniform chain beat VERIFIED (7 group wakes,
+flag-by-flag), stone-muffles VERIFIED (86 wall-blocked pairs false / 1,846
+open true, zero counterexamples), heavy whiff rest VERIFIED (6 baits).
+TWO caught broken-in-the-common-case and fixed here:
+- certainty gate was EUCLIDEAN (diagonal cheb-2 stare-downs survived — 10
+  beats nose-to-diagonal with a bat) → gate now CHEBYSHEV.
+- Gruk "walks home" never terminated (LOS-blind chase re-pulled him at ≤4;
+  period-6 patrol forever, leash bark re-arming) → leashed+unseen+home = HOLDS.
+Plus: sleepwalkers that drift into knife range startle awake same phase.
+rogue battery 0W/20, 0 stalls — in band.
+
+## Tempo pack battery — 2026-06-12 AM (iter68, speedrunner audit 'Dash')
+
+Dash's measured findings (4 runs): dread spawner STARVED on unexplored floors
+(150+ turns past dreadAt, zero spawns — needed an explored tile >8 away);
+2-hunter cap made stair-camping consequence-free; ward sales minted +52 score
+in 3 sells (double-dip); the speed bonus could never out-pay farming (full-
+clear death on F5 scored 1855 vs a theoretical perfect speed WIN ~1330); the
+dark stair was 3/3 deaths post-landing ("a coffin lid").
+
+| config | result | note |
+|---|---|---|
+| warrior standard | 6W/20 (30%) · 13/14 deaths AT the Lich | at accept ceiling — likely n=20 variance (sd ~10%); WATCH next battery |
+| rogue standard | 1W/20 (5%) | in band |
+| mage standard | 0W/20 · 12/20 at Lich | bound unchanged · ZERO stalls everywhere |
+
+Shipped: sales pay gold not score · win bonus 250+max(0,2500−2·turns) ·
+spawner 64→16→frontier fallback + cap gone + elite hunters from #3 ·
+dark-stair 15-turn shroud + landing spoil · denied-cue floaters · Shift+Enter
+dark routing. 8 new harness assertions.
+
+## Warrior tuning journey + Dash round-2 — 2026-06-12 AM (iter69)
+
+WATCH flag resolved with a knob hunt (all n=40):
+| block formula | winrate | verdict |
+|---|---|---|
+| {2,3,4,5} vs all hits | 38% (15W, 19/25 at Lich) | double the band — two rings + maul + mechanic boons crept the class |
+| {1,2,3,4} (round down) | 5% then 10% (mean 7.5%) | one block point = ~30 winrate points; overshoot |
+| **{2,3,4,5}, only vs dmg≥3** | **17% (7W, 24/33 at Lich)** | SHIPPED — chip of 1-2 slips beneath the guard; 'one big foe blunts itself on you' is now literally the rule |
+
+DASH ROUND-2: ALL SIX tempo fixes VERIFIED on live — the first all-green
+confirmation round (dread unstarvable 2/2 @ ft190 exactly; elite hunter #3
+2/2 with 0 xp; sales score-frozen; Shift+Enter both ways + bonus math read
+from served source; dark stair 2/2 clean landings, shroud blinds to sight−3
+measured, spoil at d=1, survival 303/91 turns vs the prior 3/3 ~120-turn
+deaths; denied-cues fire per mash). His round-2 leak — elite hunter HOARDS
+minting goldEarned — gated on xp>0, harness-asserted.
+
+## 2026-06-12 — iter80: GRAVEDIGGER (new class, endgame menu #4 pick A)
+Target band: 10–25% (warrior-like frontliner), ZERO stalls. History (smart/Veteran):
+- v1 hp40/atk6/def1, pets 4+2d hp · 2+⌈d/2⌉ atk · ttl20 · cd8, rites +5cd5: **4%** (n=25) — floor-3 wall
+- v2 atk7, pets +1hp/+1atk, cd6: **8%** (n=25) / **3%** (n=40) — reaches endgame, loses it
+- v3 + grave-ward (+1 DEF while a shambler walks), rites +6, ttl25: **5%** (n=40)
+- v4 + necrotic burst (falling shambler deals 3+depth to adjacent foes, no score): **5%** (n=40)
+- v5 sim-policy fix — pre-raise ("walk with your dead"), not mid-fight-only: **7%** (n=40)
+- v6 atk 8 (spade = warrior parity; pets/burst are the surplus): **15%** (n=40, 0 stalls) ✓ SHIPPED
+Lesson: the wall was kill-speed, not survivability — mechanics (ward/burst) made the class
+play right, but atk parity is what moved the band. Pet kills mint no score by design
+(ember-poverty tension); sim can't measure that trade, personas judge it.
+- v7 confirm (post-persona round: class boons + UI fixes, combat math unchanged): 7% (n=40).
+  Pooled v6+v7 = 9/80 = 11% — in band; Morrigan (human-feel persona) judged power
+  "right, maybe a hair strong on attrition" → no further tuning. ACCEPTED at ~11-15%.

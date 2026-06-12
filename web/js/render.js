@@ -426,17 +426,20 @@ function draw(t) {
     ctx.font = GLYPH_FONT;
     for (let i = G.corpses.length - 1; i >= 0; i--) {
       const c = G.corpses[i];
-      c.life -= dt60 * 1.1;
+      // the gravedigger's corpses hold until their turns run out (decay is
+      // turn-based in afterPlayerTurn); everyone else's fade as set dressing
+      if (G.classDef && G.classDef.digger) c.life = Math.min(1, 0.3 + (c.turns || 0) / 18);
+      else c.life -= dt60 * 1.1;
       if (c.life <= 0) { G.corpses.splice(i, 1); continue; }
       if (!G.visible.has(c.x + ',' + c.y)) continue;
       const sink = (1 - c.life) * 4;
       const cspr = c.id ? spriteFor(c.id) : null;
       if (cspr) {
         drawSprite(cspr, c.x * CELL + CELL / 2, c.y * CELL + CELL - 2 + sink,
-          CELL * 1.1, { alpha: clamp(c.life, 0, 1) * 0.5, flip: c.faceL });
+          CELL * 1.1, { alpha: clamp(c.life, 0, 1) * (G.classDef && G.classDef.digger ? 0.85 : 0.5), flip: c.faceL });
         continue;
       }
-      ctx.globalAlpha = clamp(c.life, 0, 1) * 0.55;
+      ctx.globalAlpha = clamp(c.life, 0, 1) * (G.classDef && G.classDef.digger ? 0.9 : 0.55);
       ctx.fillStyle = c.color;
       ctx.fillText(c.glyph, c.x * CELL + CELL / 2, c.y * CELL + CELL / 2 + 1 + sink);
     }
@@ -517,7 +520,11 @@ function draw(t) {
       if (!G.map.inBounds(ax, ay)) continue;
       const open = G.map.walkable(ax, ay) && diagOpen(G.map, pp.x, pp.y, adx, ady);
       const occ = monsterAt(ax, ay);
-      if (occ && G.visible.has(ax + ',' + ay)) {
+      if (occ && occ.pet && G.visible.has(ax + ',' + ay)) {
+        // your own shambler beside you: a calm green outline, not a threat
+        ctx.strokeStyle = 'rgba(159,216,159,0.45)';
+        ctx.strokeRect(ax * CELL + 1.5, ay * CELL + 1.5, CELL - 3, CELL - 3);
+      } else if (occ && G.visible.has(ax + ',' + ay)) {
         const apulse = 0.5 + 0.5 * Math.sin(t / 110);
         ctx.strokeStyle = `rgba(255,90,90,${0.5 + 0.3 * apulse})`; // a foe in arm's reach
         ctx.lineWidth = 2;

@@ -170,7 +170,7 @@ function stepProjectiles() {
         dead = true; break;
       }
       const m = monsterAt(tx, ty);
-      if (m && (pr.fromPlayer || m !== pr.src)) {
+      if (m && !(pr.fromPlayer && m.pet) && (pr.fromPlayer || m !== pr.src)) {
         const dmg = pr.dmg;
         m.hp -= dmg; m.flashT = 1; m.awake = true;
         boltImpact(pr, tx, ty, 8, 60);
@@ -458,7 +458,7 @@ function newPlayer(cls) {
     crit: cls.crit, dodge: cls.dodge || 0,
     mana: cls.mana, maxMana: cls.mana,
     gold: 0, poison: 0,
-    keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0,
+    keys: 0, cleaveCd: 0, chargeCd: 0, dashCd: 0, exhumeCd: 0, ritesCd: 0,
     boons: {}, momentum: 0, secondWind: false, bulwarkT: 0, braced: false,
     guardT: 0, guardCd: 0, vaultCd: 0, vaultStrike: 0, ring2: null,
     inventory: [], weapon: null, armor: null, ring: null,
@@ -482,7 +482,9 @@ const playerAtk = () => G.player.baseAtk + (G.player.weapon ? ITEMS[G.player.wea
   + (hasBoon('b_momentum') ? G.player.momentum : 0)
   + (hasBoon('b_adrenal') && G.player.hp < G.player.maxHp * 0.3 ? 3 : 0);
 const playerDef = () => G.player.baseDef + (G.player.armor ? ITEMS[G.player.armor].bonus : 0) + (ringIs('ring_guard') ? 2 : 0)
-  + (G.player.bulwarkT > 0 ? 3 : 0);
+  + (G.player.bulwarkT > 0 ? 3 : 0)
+  // grave-ward: while a shambler walks, the dead absorb part of every blow
+  + (G.classDef && G.classDef.digger && G.monsters.some(o => o.pet) ? 1 : 0);
 const playerDodge = () => clamp(G.player.dodge + (hasBoon('b_fleet') ? 0.15 : 0)
   + (hasBoon('b_ghost') ? 0.08 : 0) - (hasBoon('b_shadow') ? 0.08 : 0)
   + (ringIs('ring_swift') ? 0.08 : 0)
@@ -677,7 +679,7 @@ function startLevel(depth) {
   }
   // one guaranteed elite per floor (2+) — it carries the key to the golden chest
   if (depth >= 2) {
-    const candidates = G.monsters.filter(m => !m.boss && !m.mini && !m.elite);
+    const candidates = G.monsters.filter(m => !m.boss && !m.mini && !m.elite && !m.pet);
     if (candidates.length) makeElite(RNG.pick(candidates), !!map.hasGoldChest);
   }
 
@@ -821,6 +823,13 @@ function tryMove(dx, dy) {
   if (!diagOpen(G.map, p.x, p.y, dx, dy)) { addMsg('The corner is too tight to squeeze through.', 'm-dim'); return; }
   const m = monsterAt(nx, ny);
   if (m) {
+    if (m.pet) { // your own dead make way — swap places
+      teachOnce('petswap', 'You slip past your shambler — your own dead always make way.');
+      m.x = p.x; m.y = p.y; p.x = nx; p.y = ny;
+      if (!onEnterTile(nx, ny)) return;
+      afterPlayerTurn();
+      return;
+    }
     if (!G.visible.has(nx + ',' + ny)) addMsg('You strike at something in the dark!', 'm-combat');
     attackMonster(m);
     afterPlayerTurn();
@@ -967,7 +976,7 @@ function afterPlayerTurn() {
   // contextual teaches at the moments they matter (fresh-eyes audit)
   if (G.turn === 25 && (typeof MOBILE_UI === 'undefined' || !MOBILE_UI)) teachOnce('zoom', 'The dark feels distant? X cycles the camera closer — five zoom levels.');
   if (!G.usedDiag && G.turn > 8 && (typeof MOBILE_UI === 'undefined' || !MOBILE_UI)) {
-    const dg = G.monsters.some(m2 => m2.awake && Math.abs(m2.x - p.x) === 1 && Math.abs(m2.y - p.y) === 1 && G.visible.has(m2.x + ',' + m2.y));
+    const dg = G.monsters.some(m2 => m2.awake && !m2.pet && Math.abs(m2.x - p.x) === 1 && Math.abs(m2.y - p.y) === 1 && G.visible.has(m2.x + ',' + m2.y));
     if (dg) { if (teachOnce('diag', 'That foe stands at your corner — Q, E, Z and C step (and strike) diagonally.')) G.usedDiag = true; }
   }
   if (G.turn === 40 && typeof MOBILE_UI !== 'undefined' && MOBILE_UI) teachOnce('holdread', 'Hold any button or pack row to read what it does.');
@@ -979,6 +988,14 @@ function afterPlayerTurn() {
   if (p.vaultCd > 0) p.vaultCd--;
   if (p.guardT > 0) p.guardT--; // the planted shield lowers after the foes' reply
   if (p.vaultStrike > 0) p.vaultStrike--; // the opened back closes fast
+  if (p.exhumeCd > 0) p.exhumeCd--;
+  if (p.ritesCd > 0) p.ritesCd--;
+  // a gravedigger's corpses keep only so long before the dust takes them
+  if (G.classDef && G.classDef.digger) {
+    for (let ci = G.corpses.length - 1; ci >= 0; ci--) {
+      if (--G.corpses[ci].turns <= 0) G.corpses.splice(ci, 1);
+    }
+  }
   if (G.shroudT > 0) { G.shroudT--; if (G.shroudT === 0) addMsg('The dark-stair shroud thins away.', 'm-dim'); }
   // the dread clock: linger too long and the dark sends MELEE hunters (capped, worthless XP)
   const dreadAt = G.diff.dreadAt - dreadShift();
@@ -1061,6 +1078,7 @@ function afterPlayerTurn() {
 }
 
 function attackMonster(m, bonus = 0) {
+  if (m && m.pet) return; // your blade refuses your own dead — no path may strike a shambler
   const p = G.player;
   const backstab = G.classId === 'rogue' && (!m.awake || m.frozen > 0 || m.stirring || p.vaultStrike > 0);
   if (G.classId === 'rogue' && p.vaultStrike > 0) p.vaultStrike = 0; // one strike per vault
@@ -1132,9 +1150,17 @@ function dropSpot(x, y) {
 }
 
 function killMonster(m) {
+  if (m.pet) { // a shambler returns to the earth — no glory, and no corpse worth raising
+    const pi = G.monsters.indexOf(m);
+    if (pi >= 0) G.monsters.splice(pi, 1);
+    addDecal(m.x, m.y);
+    addMsg('Your shambler collapses into still bones.', 'm-dim');
+    necroticBurst(m);
+    return;
+  }
   // the mage drinks the moment of death: kills siphon +1 mana (player feedback:
   // +2 made the mage 'too powerful' — Mana Font's +1 restores the old rate)
-  if (G.player && G.player.maxMana > 0 && (m.xp > 0 || m.boss) && G.player.mana < G.player.maxMana) {
+  if (G.player && G.player.maxMana > 0 && (m.xp > 0 || m.boss) && !m.killedByPet && G.player.mana < G.player.maxMana) {
     const sip = 1 + (G.player.weapon && ITEMS[G.player.weapon].trait === 'siphon' ? 1 : 0);
     G.player.mana = Math.min(G.player.maxMana, G.player.mana + sip);
     if (G.visible.has(m.x + ',' + m.y)) spawnFloater(m.x, m.y, `+${sip} mana`, '#9ecbff');
@@ -1142,17 +1168,20 @@ function killMonster(m) {
   const idx = G.monsters.indexOf(m);
   if (idx < 0) return;
   G.monsters.splice(idx, 1);
-  if (m.xp > 0 || m.boss) G.kills++;
+  // a shambler's killing blow mints no glory: the kill count (and so the
+  // score and the embers) belong to YOUR blows — corpse-economy's real cost
+  if ((m.xp > 0 && !m.killedByPet) || m.boss) G.kills++;
+  else if (m.killedByPet && m.xp > 0 && G.visible.has(m.x + ',' + m.y)) spawnFloater(m.x, m.y, 'no glory', '#9aa0b8');
   G.killsBy[m.name] = (G.killsBy[m.name] || 0) + 1;
   if (m.id) G.bestiaryRun[m.id] = (G.bestiaryRun[m.id] || 0) + 1; // lifetime tally feeds the Bestiary
-  G.corpses.push({ x: m.x, y: m.y, glyph: m.glyph, color: m.color, id: m.id, faceL: m.faceL, life: 1 });
+  G.corpses.push({ x: m.x, y: m.y, glyph: m.glyph, color: m.color, id: m.id, faceL: m.faceL, life: 1, turns: hasBoon('b_coldrest') ? 30 : 18 });
   if (G.corpses.length > 40) G.corpses.shift();
   if (G.kills === 1) lichSay('firstKill');
   else if (m.elite) lichSay('eliteKill');
   const p = G.player;
   // raised bones, hunters and other 0-xp chaff carry no glory — and feed no
   // boons, or a mage parked beside the Lich farms his summons forever
-  if (m.xp > 0 || m.boss) {
+  if ((m.xp > 0 && !m.killedByPet) || m.boss) {
     if (hasBoon('b_vamp') && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + 1);
     if (hasBoon('b_momentum')) p.momentum = Math.min(3, p.momentum + 1);
     if (hasBoon('b_font') && p.maxMana > 0) p.mana = Math.min(p.maxMana, p.mana + 1);
@@ -1179,7 +1208,7 @@ function killMonster(m) {
     spawnFloater(m.x, m.y, 'KEY', '#ffd75e', 15);
     Sfx.gold();
   }
-  if (m.elite && m.xp > 0) { // escalated 0-xp hunters carry no hoard either
+  if (m.elite && m.xp > 0 && !m.killedByPet) { // escalated 0-xp hunters carry no hoard either — and a shambler's frenzy tramples any hoard into the muck
     const g = RNG.int(10, 18);
     earnGold(g);
     addMsg(`${TheM(m)}'s hoard: +${g} gold.`, 'm-gold');
@@ -1434,6 +1463,7 @@ function descend() {
   const darkPlunge = here === T.DARKSTAIRS;
   if (darkPlunge) G.darkUsed = true; // the dark grants ONE shortcut a run — skip-skip gutted the game
   if (darkPlunge) G.darkNext = true;
+  if (G.monsters.some(o => o.pet)) addMsg('Your shamblers cannot follow — the dead keep to their floor.', 'm-dim');
   Sfx.stairs();
   if (G.floorDmg === 0 && G.turn > 0) {
     G.bonusScore += 40;
@@ -1643,7 +1673,7 @@ function castBulwark() {
   p.guardCd = 12 - tempoEdge();
   if (hasBoon('b_stonewall')) {
     let shook = 0;
-    for (const m of G.monsters) if (cheb(m.x, m.y, p.x, p.y) <= 1) { m.skipT = Math.max(m.skipT || 0, 1); m.stirring = true; shook++; }
+    for (const m of G.monsters) if (!m.pet && cheb(m.x, m.y, p.x, p.y) <= 1) { m.skipT = Math.max(m.skipT || 0, 1); m.stirring = true; shook++; }
     if (shook) addMsg('The shield SLAMS down — the ground answer staggers those beside you.', 'm-gold');
   }
   addMsg('You plant your shield and set your feet. Let them come.', 'm-gold');
@@ -1923,6 +1953,129 @@ function castSpell(i) {
 }
 
 /* warrior-only: strike every adjacent enemy in one sweep */
+/* ---------- the Gravedigger: the dead owe him work ---------- */
+const petCap = () => hasBoon('b_thirdgrave') ? 3 : 2;
+// even in death they serve: a falling shambler bursts in grave-rot
+function necroticBurst(m) {
+  const dmg = 3 + G.depth;
+  let hit = 0;
+  for (const o of [...G.monsters]) {
+    if (o.pet || !G.monsters.includes(o) || cheb(o.x, o.y, m.x, m.y) > 1) continue;
+    o.hp -= dmg; o.flashT = 1; hit++;
+    if (G.visible.has(o.x + ',' + o.y)) spawnFloater(o.x, o.y, String(dmg), '#8fe05e');
+    if (o.hp <= 0) { o.killedByPet = true; killMonster(o); }
+  }
+  if (G.visible.has(m.x + ',' + m.y)) {
+    spawnBurst(m.x, m.y, '#8fe05e', 18, 90);
+    if (hit) addMsg(`The shambler BURSTS in a wash of grave-rot — ${hit} ${hit === 1 ? 'foe is' : 'foes are'} seared!`, 'm-gold');
+  }
+}
+function petCount() { return G.monsters.filter(o => o.pet).length; }
+function nearestCorpse(maxD) {
+  const p = G.player;
+  let best = null, bd = 1e9;
+  for (const c of G.corpses) {
+    if (!G.visible.has(c.x + ',' + c.y)) continue;
+    const d = cheb(c.x, c.y, p.x, p.y);
+    if (d <= maxD && d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+function castExhume() {
+  if (G.state !== 'PLAY' || !G.classDef.digger) return;
+  const p = G.player;
+  if (p.exhumeCd > 0) { addMsg(`The earth resists — Exhume returns in ${p.exhumeCd} ${p.exhumeCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.exhumeCd}`, '#9a91b8'); return; }
+  if (petCount() >= petCap()) { addMsg('Two shamblers already walk for you — the grave grants no more.', 'm-dim'); return; }
+  const c = nearestCorpse(4);
+  if (!c) { addMsg('No corpse lies in reach of your spade (4 tiles, in sight).', 'm-dim'); return; }
+  cancelTravel();
+  // it rises where it fell — or beside the grave, if something stands on it
+  let gx = c.x, gy = c.y;
+  if (monsterAt(gx, gy) || (gx === p.x && gy === p.y)) {
+    let spot = null;
+    for (const [dx, dy] of DIRS8) {
+      const ax = c.x + dx, ay = c.y + dy;
+      if (G.map.walkable(ax, ay) && !monsterAt(ax, ay) && !(ax === p.x && ay === p.y)) { spot = [ax, ay]; break; }
+    }
+    if (!spot) { addMsg('The grave is hemmed in — nothing can rise there.', 'm-dim'); return; }
+    gx = spot[0]; gy = spot[1];
+  }
+  G.corpses.splice(G.corpses.indexOf(c), 1);
+  const sh = {
+    id: 'shambler', name: 'shambler', glyph: 'z', color: '#9fd89f',
+    pet: true, x: gx, y: gy,
+    hp: 5 + 2 * G.depth, maxHp: 5 + 2 * G.depth,
+    atk: 3 + Math.ceil(G.depth / 2), def: 0,
+    ttl: 25, xp: 0, sight: 7, awake: true, frozen: 0, skipT: 0, flashT: 0,
+  };
+  G.monsters.push(sh);
+  p.exhumeCd = 6;
+  Sfx.scroll();
+  spawnBurst(gx, gy, '#9fd89f', 14, 80);
+  addMsg('You drive the spade into the grave — a shambler claws its way up to serve!', 'm-gold');
+  spawnFloater(gx, gy, 'RISE', '#9fd89f', 13);
+  afterPlayerTurn();
+}
+function castLastRites() {
+  if (G.state !== 'PLAY' || !G.classDef.digger) return;
+  const p = G.player;
+  if (p.ritesCd > 0) { addMsg(`The rites need ${p.ritesCd} more ${p.ritesCd === 1 ? 'turn' : 'turns'}.`, 'm-dim'); spawnFloater(p.x, p.y, `${p.ritesCd}`, '#9a91b8'); return; }
+  let c = null;
+  for (const cc of G.corpses) if (cheb(cc.x, cc.y, p.x, p.y) <= 1) { c = cc; break; }
+  if (!c) { addMsg('Last Rites need a corpse at your feet or beside you.', 'm-dim'); return; }
+  if (p.hp >= p.maxHp) { addMsg('You are unhurt — save the rites for when you bleed.', 'm-dim'); return; }
+  cancelTravel();
+  G.corpses.splice(G.corpses.indexOf(c), 1);
+  p.hp = Math.min(p.maxHp, p.hp + 6);
+  if (hasBoon('b_embalmer') && p.poison > 0) { p.poison = 0; addMsg('The rites draw the venom out with the rot.', 'm-good'); }
+  p.ritesCd = 5;
+  Sfx.potion();
+  addDecal(c.x, c.y);
+  addMsg('You speak the rites over the fallen — its rest feeds your wounds. +6 HP.', 'm-gold');
+  spawnFloater(p.x, p.y, '+6', '#7ee0a3');
+  afterPlayerTurn();
+}
+function petAct(m) {
+  if (--m.ttl <= 0) {
+    const pi = G.monsters.indexOf(m);
+    if (pi >= 0) G.monsters.splice(pi, 1);
+    addDecal(m.x, m.y);
+    if (G.visible.has(m.x + ',' + m.y)) addMsg('Your shambler crumbles back to grave-dust.', 'm-dim');
+    necroticBurst(m);
+    return;
+  }
+  const p = G.player;
+  // the dead hold a grudge: hunt the nearest living foe nearby, else heel
+  let tgt = null, td = 99;
+  for (const o of G.monsters) {
+    if (o.pet) continue;
+    const d = cheb(o.x, o.y, m.x, m.y);
+    if (d < td) { td = d; tgt = o; }
+  }
+  if (tgt && td <= 1) {
+    tgt.awake = true;
+    const dmg = Math.max(1, m.atk + RNG.int(-1, 1));
+    tgt.hp -= dmg; tgt.flashT = 1;
+    if (G.visible.has(tgt.x + ',' + tgt.y)) {
+      spawnFloater(tgt.x, tgt.y, String(dmg), m.color);
+      addMsg(`Your shambler claws ${theM(tgt)} for ${dmg}.`, 'm-good');
+    }
+    if (tgt.hp <= 0) { tgt.killedByPet = true; killMonster(tgt); }
+    return;
+  }
+  const goal = (tgt && td <= 6) ? tgt : (cheb(m.x, m.y, p.x, p.y) > 2 ? p : null);
+  if (!goal) return;
+  let best = null, bd = cheb(m.x, m.y, goal.x, goal.y);
+  for (const [dx, dy] of DIRS8) {
+    const nx = m.x + dx, ny = m.y + dy;
+    if (!G.map.walkable(nx, ny) || monsterAt(nx, ny) || (nx === p.x && ny === p.y)) continue;
+    if (!diagOpen(G.map, m.x, m.y, dx, dy)) continue;
+    const dd = cheb(nx, ny, goal.x, goal.y);
+    if (dd < bd) { bd = dd; best = [nx, ny]; }
+  }
+  if (best) { m.x = best[0]; m.y = best[1]; monsterStepHazard(m); }
+}
+
 function castCleave() {
   if (G.state !== 'PLAY') return;
   cancelTravel();
@@ -2060,7 +2213,7 @@ function useItem(index) {
     spawnFloater(p.x, p.y, 'ATK +1', '#ffb55e');
   } else if (entry.id === 'scroll_fire') {
     const targets = G.monsters.filter(m =>
-      G.visible.has(m.x + ',' + m.y) && dist2(m.x, m.y, p.x, p.y) <= 36);
+      !m.pet && G.visible.has(m.x + ',' + m.y) && dist2(m.x, m.y, p.x, p.y) <= 36);
     if (!targets.length) { addMsg('The scroll crackles… but finds no targets.', 'm-dim'); return; }
     const dmg = 12 + G.depth * 2;
     Sfx.fireball();
@@ -2182,6 +2335,7 @@ function monstersAct() {
   const field = computeDistField(G.map, p.x, p.y);
   for (const m of [...G.monsters]) {
     if (!G.monsters.includes(m)) continue;
+    if (m.pet) { petAct(m); continue; }
     if (m.frozen > 0) { m.frozen--; m.windup = 0; m.beam = null; m.lane = null; continue; }
     if (m.justWoke) { m.justWoke = false; continue; } // the stir beat: woken this round, acts next
     if (m.skipT > 0) { m.skipT--; if (m.skipT === 0) m.stirring = false; continue; }
@@ -2324,7 +2478,7 @@ function monstersAct() {
         // the cry carries: nearby monsters stir
         let woke = 0;
         for (const o of G.monsters) {
-          if (o === m || o.awake || o.boss) continue;
+          if (o === m || o.pet || o.awake || o.boss) continue;
           if (cheb(o.x, o.y, m.x, m.y) <= 2 && cryReaches(m.x, m.y, o.x, o.y)) {
             o.awake = true; o.stirring = true; o.justWoke = true; woke++;
           }
@@ -2376,6 +2530,19 @@ function monstersAct() {
       }
     }
 
+    // the bodyguard rule: a foe beside a shambler tears at IT — beside both
+    // the shambler and you, its hate splits evenly
+    const petAdj = G.monsters.find(o => o.pet && cheb(o.x, o.y, m.x, m.y) <= 1);
+    if (petAdj && !m.boss && (cheb(m.x, m.y, p.x, p.y) > 1 || RNG.chance(0.5))) {
+      const pdmg = Math.max(1, m.atk + RNG.int(-1, 1) - 1);
+      petAdj.hp -= pdmg; petAdj.flashT = 1;
+      if (G.visible.has(petAdj.x + ',' + petAdj.y)) {
+        spawnFloater(petAdj.x, petAdj.y, String(pdmg), '#e35d6a');
+        addMsg(`${TheM(m)} tears at your shambler for ${pdmg}.`, 'm-combat');
+      }
+      if (petAdj.hp <= 0) killMonster(petAdj);
+      continue;
+    }
     if (cheb(m.x, m.y, p.x, p.y) <= 1) {
       // casters back away from blades — but only while their bolt is ready; on cooldown they must brawl
       if (m.ranged && !m.boss && m.cd === 0 && RNG.chance(0.6)) {
@@ -2436,7 +2603,7 @@ function monstersAct() {
 
     // shaman: mend a wounded ally in line of sight instead of advancing
     if (m.healer) {
-      const ally = G.monsters.filter(o => o !== m && o.hp < o.maxHp && dist2(o.x, o.y, m.x, m.y) <= 36
+      const ally = G.monsters.filter(o => o !== m && !o.pet && o.hp < o.maxHp && dist2(o.x, o.y, m.x, m.y) <= 36
           && traceBeam(m.x, m.y, o.x, o.y).some(t => t.x === o.x && t.y === o.y))
         .sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0];
       if (ally) {
@@ -2672,7 +2839,7 @@ function findPath(sx, sy, tx, ty, avoidTraps, allowWares) {
 }
 
 const watcher = () => G.monsters
-  .filter(m => m.awake && m.frozen === 0 && G.visible.has(m.x + ',' + m.y)
+  .filter(m => !m.pet && m.awake && m.frozen === 0 && G.visible.has(m.x + ',' + m.y)
     && dist2(m.x, m.y, G.player.x, G.player.y) <= 36) // only nearby watchers gate travel — veterans' top time-tax
   .sort((a, b) => dist2(a.x, a.y, G.player.x, G.player.y) - dist2(b.x, b.y, G.player.x, G.player.y))[0];
 const dangerVisible = () => !!watcher();
@@ -2895,6 +3062,12 @@ function buildSpellPanel() {
     addRow('[V]', `${ABILITY_GLYPHS.cleave} Cleave`, 'ready', 'strike every adjacent foe in one sweep', () => castCleave(), 'cleave-row');
     addRow('[B]', `${ABILITY_GLYPHS.charge} Shield Charge`, 'ready', 'dash up to 3 tiles along a clear line into a foe and strike at +50%', () => castCharge(), 'charge-row');
     addRow('[G]', `${ABILITY_GLYPHS.bulwark} Bulwark`, 'ready', 'plant your shield: until your next turn every hit is turned aside to 1 damage', () => castBulwark(), 'bulwark-row');
+  } else if (G.classId === 'gravedigger') {
+    addRow('[V]', `${ABILITY_GLYPHS.exhume} Exhume`, 'ready', 'raise a shambler from a corpse in sight (≤4 tiles) — it hunts beside you, then crumbles', () => castExhume(), 'exhume-row');
+    addRow('[B]', `${ABILITY_GLYPHS.rites} Last Rites`, 'ready', 'consume a corpse at your side: +6 HP — the grave gives, and the grave takes back', () => castLastRites(), 'rites-row');
+    addRow('—', 'Corpse-keeper', '·', 'passive: the slain linger 18 turns as workable corpses; shambler kills earn you NO score', null);
+    addRow('—', 'Grave-ward', '+1', 'passive: while a shambler walks, the dead absorb part of every blow (+1 defense)', null);
+    addRow('—', 'Necrotic burst', '✷', 'passive: a falling shambler bursts in grave-rot, searing every foe beside it', null);
   } else {
     addRow('[V]', `${ABILITY_GLYPHS.dash} Shadow Dash`, 'ready', 'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade', () => castShadowDash(), 'dash-row');
     addRow('[B]', `${ABILITY_GLYPHS.vault} Vault`, 'ready', 'leap clean over an adjacent foe and land behind it — your strike on arrival is a backstab', () => castVault(), 'vault-row');
@@ -2942,6 +3115,16 @@ function updateUI() {
   if (dashRow) {
     dashRow.classList.toggle('cant', p.dashCd > 0);
     dashRow.querySelector('.cost').textContent = p.dashCd > 0 ? p.dashCd + 't' : 'ready';
+  }
+  const exhumeRow = $('exhume-row');
+  if (exhumeRow) {
+    exhumeRow.classList.toggle('cant', p.exhumeCd > 0);
+    exhumeRow.querySelector('.cost').textContent = p.exhumeCd > 0 ? p.exhumeCd + 't' : 'ready';
+  }
+  const ritesRow = $('rites-row');
+  if (ritesRow) {
+    ritesRow.classList.toggle('cant', p.ritesCd > 0);
+    ritesRow.querySelector('.cost').textContent = p.ritesCd > 0 ? p.ritesCd + 't' : 'ready';
   }
   const bulwarkRow = $('bulwark-row');
   if (bulwarkRow) {
@@ -3114,7 +3297,7 @@ function saveRun() {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       v: 1, rngS: RNG.s, diffId: G.diffId, daily: G.daily, classId: G.classId,
       depth: G.depth, turn: G.turn, floorTurns: G.floorTurns, floorDmg: G.floorDmg,
-      clockSpawns: G.clockSpawns, kills: G.kills, killsBy: G.killsBy,
+      clockSpawns: G.clockSpawns, kills: G.kills, killsBy: G.killsBy, bestiaryRun: G.bestiaryRun || {},
       goldEarned: G.goldEarned, bonusScore: G.bonusScore, potionsDrunk: G.potionsDrunk,
       purchases: G.purchases, shrineArmed: G.shrineArmed,
       player: G.player, monsters: G.monsters, items: G.items, shop: G.shop, decals: G.decals,
@@ -3122,6 +3305,7 @@ function saveRun() {
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
       shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0, dailyPractice: !!G.dailyPractice,
+      corpses: G.corpses,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -3152,7 +3336,8 @@ function loadRun() {
   G.killsBy = s.killsBy || {}; G.goldEarned = s.goldEarned || 0; G.bonusScore = s.bonusScore || 0;
   G.potionsDrunk = s.potionsDrunk || 0; G.purchases = s.purchases || 0;
   G.shrineArmed = s.shrineArmed || {};
-  G.lichSaid = s.lichSaid || {}; G.echo = s.echo || null; G.darkNext = !!s.darkNext; G.corpses = [];
+  G.lichSaid = s.lichSaid || {}; G.echo = s.echo || null; G.darkNext = !!s.darkNext; G.corpses = s.corpses || [];
+  G.bestiaryRun = s.bestiaryRun || {}; // a resumed run must keep killing cleanly (Vex blocker: undefined here threw in killMonster)
   G.dailyBase = s.dailyBase != null ? s.dailyBase : null;
   G.projectiles = (s.projectiles || []).map(pr => ({ ...pr, src: null }));
   G.shells = s.shells || [];
@@ -3416,7 +3601,7 @@ fitView();
 // one icon language everywhere: HUD buttons, sidebar rows, help (widget 7406d6fd)
 const ABILITY_GLYPHS = {
   spells: ['✦', '❅', '✚', '✷'], // bolt, nova, mend, blink
-  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴',
+  cleave: '⚔', charge: '»', bulwark: '⛨', dash: '»', vault: '⤴', exhume: '⛏', rites: '✟',
 };
 
 const MOVE_KEYS = {
@@ -3596,6 +3781,8 @@ function toggleHelp() {
       ? '<b style="color:var(--gold)">Your craft (mage).</b> Firebolt flies 3 tiles a turn at the nearest foe — fast movers can dodge it; point-blank never misses. Nova freezes 2 tiles around you ~3 turns. Blink [V] steps you to a tile YOU choose (hover/tap it first, ≤4). Kills siphon +2 mana — aggression sustains you. Your WARD drinks half of every blow at 1 mana per 2 damage — an empty pool means a naked mage, but a staff or orb in hand scrapes +1 mana per melee blow. ⚔ Attack powers spells too: +atk gifts are caster gifts.'
       : G.classId === 'rogue'
       ? '<b style="color:var(--gold)">Your craft (rogue).</b> Dozing (z) and stirring (?) foes eat your blade for ×3 — stalk them; your steps are quiet, theirs are not. Shadow Dash [V] melts you BEHIND a foe up to 3 tiles out — even one beside you — and strikes as you land. Vault [B] leaps you clean OVER an adjacent foe — and your strike on arrival is a true backstab. A survivor of a botched stab screams. Frozen foes count as unaware.'
+      : G.classId === 'gravedigger'
+      ? '<b style="color:var(--gold)">Your craft (gravedigger).</b> Every kill leaves a corpse for 18 turns — your larder. Exhume [V] raises a shambler from a corpse in sight (≤4 tiles, two at most): it hunts beside you, draws blades that would find you, and BURSTS in grave-rot when it falls. Last Rites [B] eats a corpse beside you for +6 HP. While a shambler walks you take 1 less from every blow. The ledger: shambler kills earn you NO score or embers — finish the worthy foes yourself, and feed the rest to the dead.'
       : G.classId === 'warrior'
       ? '<b style="color:var(--gold)">Your craft (warrior).</b> Cleave [V] strikes every adjacent foe. Shield Charge [B] dashes up to 3 tiles down a clear line into a foe at +50% — your answer to archers and the Lich\'s bolts. Bulwark [G] plants your shield: until your next turn every hit is turned aside to 1 — spend the turn, soak the storm. You also passively BLOCK part of the first hit each turn (heavier armor, bigger block). You are the wall; make them come through you.'
       : '';
@@ -3663,6 +3850,7 @@ window.addEventListener('keydown', ev => {
     if (key === '1') newGame('warrior');
     else if (key === '2') newGame('rogue');
     else if (key === '3') newGame('mage');
+    else if (key === '4') newGame('gravedigger');
     return;
   }
   if (G.state === 'DEAD' || G.state === 'WIN') {
@@ -3692,12 +3880,14 @@ window.addEventListener('keydown', ev => {
   if (key === 'v') {
     if (G.classId === 'warrior') castCleave();
     else if (G.classId === 'mage') castSpell(3);
+    else if (G.classId === 'gravedigger') castExhume();
     else castShadowDash();
     return;
   }
   if (key === 'b') {
     if (G.classId === 'warrior') castCharge();
     else if (G.classId === 'rogue') castVault();
+    else if (G.classId === 'gravedigger') castLastRites();
     else addMsg('Blink [V] is your way through space.', 'm-dim');
     return;
   }
@@ -4047,6 +4237,11 @@ let joySuppressClick = false;
         'melt BEHIND a foe up to 3 tiles out and strike as you land; the unaware eat your blade');
       add(ABILITY_GLYPHS.vault, 'Vault', () => castVault(), p => p.vaultCd > 0 ? { txt: p.vaultCd, cant: true } : null,
         'leap clean over an adjacent foe \u2014 your strike on arrival is a backstab');
+    } else if (G.classId === 'gravedigger') {
+      add(ABILITY_GLYPHS.exhume, 'Exhume', () => castExhume(), p => p.exhumeCd > 0 ? { txt: p.exhumeCd, cant: true } : null,
+        'raise a shambler from a corpse in sight (\u22644 tiles) \u2014 it hunts beside you, then crumbles');
+      add(ABILITY_GLYPHS.rites, 'Last Rites', () => castLastRites(), p => p.ritesCd > 0 ? { txt: p.ritesCd, cant: true } : null,
+        'consume a corpse at your side: +6 HP \u2014 the grave gives, and the grave takes back');
     }
     // the potion button wears the actual potion sprite \u2014 '!' read as an
     // exclamation point, not a flask (widget 2e7e2c0d)

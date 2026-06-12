@@ -23,6 +23,13 @@ const CLASSES = {
     perks: ['20 mana · 4 spells', 'wards: mana drinks half of every blow', 'F bolt · G nova · H mend · V blink'],
     start: ['potion_heal', 'scroll_fire'],
   },
+  gravedigger: {
+    name: 'Gravedigger', color: '#cfa86d', glyphColor: '#e0c089',
+    hp: 40, atk: 8, def: 1, crit: 0.08, fov: 8, mana: 0, dodge: 0.05, digger: true,
+    blurb: 'The dead owe him work.',
+    perks: ['40 HP \u00b7 8 ATK \u00b7 1 DEF', 'grave-ward: +1 DEF while a shambler walks', 'V Exhume a shambler \u00b7 B Last Rites'],
+    start: ['w_dagger', 'potion_heal'],
+  },
 };
 
 /* ---------- difficulty ---------- */
@@ -91,6 +98,9 @@ const BOONS = {
   b_overchannel: { name: 'Overchannel',    desc: 'firebolt hits +4 harder — but costs 1 more', w: 2, rarity: 'rare', cls: 'mage' },
   b_stonewall:   { name: 'Stonewall',      desc: 'planting your Bulwark staggers all adjacent foes', w: 2, rarity: 'rare', cls: 'warrior' },
   b_aftershock:  { name: 'Aftershock',     desc: 'foes that survive your Cleave are staggered a turn', w: 2, rarity: 'rare', cls: 'warrior' },
+  b_thirdgrave:  { name: 'The Third Grave', desc: 'a THIRD shambler may walk for you', w: 2, rarity: 'rare', cls: 'gravedigger' },
+  b_coldrest:    { name: 'Cold Rest',       desc: 'corpses keep for 30 turns instead of 18', w: 3, rarity: 'rare', cls: 'gravedigger' },
+  b_embalmer:    { name: 'Embalmer\'s Art', desc: 'Last Rites also purge all venom from your veins', w: 2, rarity: 'rare', cls: 'gravedigger' },
   b_slipvault:   { name: 'Slipstream',     desc: 'Vault resets Shadow Dash', w: 2, rarity: 'rare', cls: 'rogue' },
   b_springheel:  { name: 'Spring-Heel',    desc: 'Vault recovers 3 turns faster', w: 2, rarity: 'rare', cls: 'rogue' },
   b_font:     { name: 'Mana Font',       desc: '+8 max mana, +1 mana on kill — but −4 max HP', w: 3, rarity: 'rare', cls: 'mage' },

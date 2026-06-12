@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -342,6 +342,41 @@ const TESTS = {
     p.hp = p.maxHp; const aHigh = g.playerAtk();
     p.hp = Math.max(1, Math.floor(p.maxHp * 0.2)); const aLow = g.playerAtk();
     return aLow === aHigh + 3;
+  },
+  // ---- gravedigger class boons (iter80, Morrigan's content-gap finding) ----
+  b_thirdgrave(p) {
+    const mk = (x, y) => ({ id: 'shambler', name: 'shambler', glyph: 'z', color: '#9fd89f', pet: true, x, y, hp: 9, maxHp: 9, atk: 4, def: 0, ttl: 25, xp: 0, sight: 7, awake: true, frozen: 0, skipT: 0, flashT: 0 });
+    G.monsters.push(mk(-5, -5), mk(-6, -6)); // parked: only the count gates the cap
+    const s = adjSpot(p);
+    G.corpses.push({ x: s[0], y: s[1], glyph: 'r', color: '#fff', life: 1, turns: 18 });
+    G.visible.add(s[0] + ',' + s[1]);
+    p.exhumeCd = 0;
+    g.castExhume(); // the second grave refuses a third
+    const before = G.monsters.filter(o => o.pet).length;
+    g.applyBoon('b_thirdgrave');
+    p.exhumeCd = 0;
+    g.castExhume(); // the third grave opens
+    const after = G.monsters.filter(o => o.pet).length;
+    G.monsters.length = 0; G.corpses.length = 0;
+    return before === 2 && after === 3;
+  },
+  b_coldrest(p) {
+    g.applyBoon('b_coldrest');
+    const s = adjSpot(p); const m = g.spawnMonster('rat', s[0], s[1]); m.hp = 1;
+    g.attackMonster(m);
+    const c = G.corpses[G.corpses.length - 1];
+    const ok = !!c && c.turns === 30;
+    G.corpses.length = 0;
+    return ok;
+  },
+  b_embalmer(p) {
+    g.applyBoon('b_embalmer');
+    G.corpses.push({ x: p.x, y: p.y, glyph: 'r', color: '#fff', life: 1, turns: 18 });
+    p.hp = p.maxHp - 7; p.poison = 6; p.ritesCd = 0;
+    g.castLastRites();
+    const ok = p.poison === 0 && p.hp >= p.maxHp - 2;
+    G.corpses.length = 0;
+    return ok;
   },
 };
 
@@ -638,6 +673,91 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('merge clears the run ledger', Object.keys(G.bestiaryRun).length === 0);
     check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
       Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
+
+  // GRAVEDIGGER (iter80, endgame menu #4 pick A): the dead owe him work
+  p = fresh('gravedigger');
+  { const spot = adjSpot(p);
+    const rat = g.spawnMonster('rat', spot[0], spot[1]); rat.hp = 1;
+    g.attackMonster(rat); // leaves a corpse with a turn budget
+    const corpse = G.corpses[G.corpses.length - 1];
+    check('the slain leave a corpse with a turn budget', corpse && corpse.turns === 18, JSON.stringify(corpse));
+    G.visible.add(corpse.x + ',' + corpse.y);
+    const k0 = G.kills, mana0 = G.monsters.length;
+    g.castExhume();
+    const pet = G.monsters.find(o => o.pet);
+    check('exhume raises a shambler from the corpse', !!pet && G.monsters.length === mana0 + 1, `monsters ${G.monsters.length}`);
+    check('exhume consumes the corpse', !G.corpses.includes(corpse));
+    check('exhume goes to ground for 6 turns', p.exhumeCd === 5, `cd ${p.exhumeCd} (6 minus the turn that just passed)`);
+
+    // the shambler's claws: kills mint NO score, but the bestiary still sees
+    if (pet) {
+      const prey = g.spawnMonster('rat', pet.x + (G.map.walkable(pet.x + 1, pet.y) && !g.monsterAt(pet.x + 1, pet.y) ? 1 : -1), pet.y);
+      prey.hp = 1; prey.awake = true;
+      const bd0 = G.bestiaryRun.rat || 0, kills0 = G.kills;
+      g.petAct(pet);
+      check('a shambler kill mints no score', !G.monsters.includes(prey) && G.kills === kills0, `kills ${G.kills} from ${kills0}`);
+      check('the bestiary still witnesses pet kills', (G.bestiaryRun.rat || 0) === bd0 + 1, `rat ${G.bestiaryRun.rat}`);
+
+      // the bodyguard rule: a foe beside the shambler (and far from you) turns
+      // on it — relocate the pet to open ground so the stage is deterministic
+      let far = null;
+      for (let fy = 1; fy < G.map.h - 1 && !far; fy++) for (let fx = 1; fx < G.map.w - 1; fx++) {
+        if (!G.map.walkable(fx, fy) || g.monsterAt(fx, fy) || g.cheb(fx, fy, p.x, p.y) < 4) continue;
+        if (G.map.walkable(fx + 1, fy) && !g.monsterAt(fx + 1, fy) && g.cheb(fx + 1, fy, p.x, p.y) > 2) { far = [fx, fy]; break; }
+      }
+      if (far) { pet.x = far[0]; pet.y = far[1]; }
+      const ox = far ? [far[0] + 1, far[1]] : [pet.x, pet.y + 1];
+      if (far) {
+        const wolf = g.spawnMonster('goblin', ox[0], ox[1]);
+        wolf.awake = true; wolf.stirring = false; wolf.justWoke = false;
+        const ph0 = pet.hp, hp0 = p.hp;
+        G.monsters.length = 0; G.monsters.push(pet, wolf); // just these two — determinism
+        g.monstersAct();
+        check('the bodyguard rule: foes beside a shambler tear at IT', pet.hp < ph0 || !G.monsters.includes(pet), `pet ${pet.hp}/${ph0}`);
+        check('the player is untouched while the shambler tanks', p.hp === hp0, `hp ${p.hp}/${hp0}`);
+      } else console.log('SKIP  bodyguard — no clear flank tile');
+
+      // swap: your own dead make way
+      if (G.monsters.includes(pet)) {
+        pet.x = p.x + 1; pet.y = p.y;
+        if (G.map.walkable(pet.x, pet.y)) {
+          const px0 = p.x;
+          g.tryMove(1, 0);
+          check('walking into your shambler swaps places', p.x === px0 + 1 && pet.x === px0, `p ${p.x} pet ${pet.x}`);
+        }
+      }
+    }
+
+    // last rites: a corpse at your feet feeds your wounds
+    const rat2 = g.spawnMonster('rat', p.x, p.y - 1) || null;
+    if (rat2) { rat2.hp = 1; g.attackMonster(rat2); }
+    const c2 = G.corpses[G.corpses.length - 1];
+    if (c2 && g.cheb(c2.x, c2.y, p.x, p.y) <= 1) {
+      p.hp = p.maxHp - 7; p.ritesCd = 0;
+      const hp1 = p.hp, nc = G.corpses.length;
+      g.castLastRites();
+      check('last rites consume the corpse and close wounds (+6)', p.hp >= hp1 + 5 && G.corpses.length < nc, `hp ${p.hp} from ${hp1}, corpses ${G.corpses.length}/${nc}`);
+    } else console.log('SKIP  last-rites — no adjacent corpse staged');
+
+    // gravedigger corpses decay on the TURN clock, not the render clock
+    G.corpses.length = 0;
+    G.corpses.push({ x: 1, y: 1, glyph: 'r', color: '#fff', life: 1, turns: 2 });
+    g.afterPlayerTurn();
+    check('corpses tick down each turn', G.corpses.length === 0 || G.corpses[0].turns === 1, JSON.stringify(G.corpses[0] || null));
+    g.afterPlayerTurn();
+    check('a spent corpse is dust', G.corpses.every(c3 => c3.turns > 0), `left ${G.corpses.length}`); }
+
+  // VEX'S BLOCKER (iter80 confirm round): a resumed run must keep killing
+  { const src80 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('saveRun persists the bestiary run ledger', src80.includes('bestiaryRun: G.bestiaryRun || {}'));
+    check('loadRun restores the bestiary run ledger', src80.includes('G.bestiaryRun = s.bestiaryRun || {}'));
+    check('travel never fears your own dead (watcher)', src80.includes('.filter(m => !m.pet && m.awake'));
+    check('shamblers carry a def stat (NaN guard)', /atk: 3 \+ Math\.ceil\(G\.depth \/ 2\), def: 0,/.test(src80)); }
+  p = fresh('gravedigger');
+  { const spot = adjSpot(p); const shp = { id: 'shambler', name: 'shambler', glyph: 'z', color: '#9fd89f', pet: true, x: spot[0], y: spot[1], hp: 9, maxHp: 9, atk: 4, def: 0, ttl: 25, xp: 0, sight: 7, awake: true, frozen: 0, skipT: 0, flashT: 0 };
+    G.monsters.push(shp);
+    g.attackMonster(shp);
+    check('your blade refuses your own dead', shp.hp === 9 && G.monsters.includes(shp), `hp ${shp.hp}`); }
 
   // WIN RECORDS (iter79, endgame menu #6): per-hero/per-difficulty ledger
   p = fresh('warrior');
