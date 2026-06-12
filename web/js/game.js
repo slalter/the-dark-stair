@@ -900,7 +900,7 @@ function afterPlayerTurn() {
     if (far) {
       const w = spawnMonster(G.depth >= 4 ? 'troll' : 'orc', far.x, far.y);
       w.awake = true;
-      w.xp = 0; // hunters carry no glory — there is nothing to farm here
+      w.xp = 0; w.goldDrop = 0; w.gold = 0; // no glory, no gold — NOTHING to farm (round-2: RNG drops minted +16 score)
       G.clockSpawns++;
       if (G.clockSpawns > 2) { makeElite(w, false); w.xp = 0; }
       addMsg(G.clockSpawns > 2 ? 'The dark is done waiting — something WORSE has your scent.' : 'Something in the dark has caught your scent.', 'm-bad');
@@ -1063,7 +1063,7 @@ function killMonster(m) {
     spawnFloater(m.x, m.y, 'KEY', '#ffd75e', 15);
     Sfx.gold();
   }
-  if (m.elite) {
+  if (m.elite && m.xp > 0) { // escalated 0-xp hunters carry no hoard either
     const g = RNG.int(10, 18);
     earnGold(g);
     addMsg(`${TheM(m)}'s hoard: +${g} gold.`, 'm-gold');
@@ -1103,9 +1103,12 @@ function hurtPlayer(dmg, srcName) {
     // attack line printed the unreduced hit and taught the wrong lesson)
     addMsg(`Your planted shield drinks it — ${dmg - 1} stopped, 1 gets through.`, 'm-good');
     dmg = 1;
-  } else if (G.classId === 'warrior' && !p.braced && dmg > 1) {
-    // 1 + half armor: 2+armor sim-tested at 40% standard / 25% NIGHTMARE
-    // bot winrate (baseline ~10%/0%) — the wall must bend, not trivialize
+  } else if (G.classId === 'warrior' && !p.braced && dmg > 2) {
+    // tuning history (n=40 batteries): full block {2,3,4,5} vs all hits = 38%
+    // (band 10-20%); rounded-down {1,2,3,4} = 5-10% (overshoot). The knob
+    // that fits: FULL-strength block, but only against real blows (dmg>=3) —
+    // chip of 1-2 slips beneath the guard. 'One big foe blunts itself on
+    // you' is now literally the rule.
     const red = Math.min(dmg - 1, 1 + Math.ceil((p.armor ? ITEMS[p.armor].bonus : 0) / 2));
     if (red > 0) {
       dmg -= red; p.braced = true;

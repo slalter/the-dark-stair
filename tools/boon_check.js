@@ -373,7 +373,7 @@ for (const cls of ['warrior', 'rogue', 'mage']) {
  * same contract as boons: untested = fail. */
 console.log('\n=== class defenses ===');
 {
-  // warrior BLOCK: first hit each turn reduced by 1+ceil(armor/2), floor 1
+  // warrior BLOCK: first REAL blow (dmg>=3) each turn reduced by 1+ceil(armor/2)
   let p = fresh('warrior'); // starts with leather (bonus 1) → reduction 2
   p.braced = false; p.hp = p.maxHp;
   g.hurtPlayer(8, 'test'); check('warrior block first hit', p.maxHp - p.hp === 6, `took ${p.maxHp - p.hp}, want 6`);
@@ -381,7 +381,8 @@ console.log('\n=== class defenses ===');
   let hp = p.hp; g.hurtPlayer(8, 'test');
   check('warrior no second block same turn', hp - p.hp === 8, `took ${hp - p.hp}, want 8`);
   p.braced = false; hp = p.hp; g.hurtPlayer(2, 'test');
-  check('warrior block floors at 1 damage', hp - p.hp === 1, `took ${hp - p.hp}, want 1`);
+  check('chip of 1-2 slips beneath the guard', hp - p.hp === 2, `took ${hp - p.hp}, want 2 (unblocked)`);
+  check('chip does not consume the block', p.braced === false, `braced ${p.braced}`);
 
   // mage WARD: absorbs floor(dmg/2) capped by mana*2, 1 mana per 2 absorbed
   p = fresh('mage'); p.hp = p.maxHp; p.mana = 20;
@@ -642,6 +643,9 @@ console.log('\n=== weapons with souls · rings · actives ===');
     if (G.monsters.length > n0) {
       check('hunter #3 arrives as an elite', !!w.elite, `elite ${w.elite}`);
       check('escalated hunters still carry no glory', w.xp === 0, `xp ${w.xp}`);
+      const e0 = G.goldEarned;
+      w.hp = 1; g.killMonster(w);
+      check('escalated hunters carry no hoard (round-2 leak)', G.goldEarned === e0, `goldEarned ${G.goldEarned} from ${e0}`);
     }
     G.monsters.length = 0; G.floorTurns = 0; G.clockSpawns = 0; }
 
