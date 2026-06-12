@@ -240,3 +240,6 @@ Target band: 5–20% (late-bloomer; the weakest start must stay genuinely danger
 Lesson: a no-mitigation class can't be fixed by stat nudges in this tuning — it needed BOTH a
 combat verb (prayer recoil) and an engine heavy enough to compound (2 stones/floor + fortify).
 Venom is the signature killer (7/37) — the counters exist (Clear Eye, antidotes, Chalice).
+- iter82 widget round (pets hp 7+2d, atk 4+⌈d/2⌉, BFS heel): 7% (n=40). Pooled recent
+  n=40 runs ≈10% — at the band floor; accepted, the buff answers the user's
+  "shamblers seem too weak" submission and the BFS heel is the real feel fix.

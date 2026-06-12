@@ -404,13 +404,31 @@ function sanctumOwned(id) {
 let sanctumOpen = false;
 /* the Bestiary's memory: lifetime kills per monster, merged at run end
    (endgame menu #1 — built on the killsBy data that already existed) */
-function mergeBestiary() {
-  let tally = {};
-  try { tally = JSON.parse(localStorage.getItem('arcaneBestiary') || '{}') || {}; } catch (e) { tally = {}; }
-  for (const [id, n] of Object.entries(G.bestiaryRun || {})) tally[id] = (tally[id] || 0) + n;
-  G.bestiaryRun = {};
-  try { localStorage.setItem('arcaneBestiary', JSON.stringify(tally)); } catch (e) { /* ignore */ }
-  return tally;
+/* the dark has SHOWN you this: sighting alone unlocks the page (widget
+ * d3f626ca: 'the bestiary doesn't show you things you've seen — it's empty').
+ * Kills write through to the lifetime ledger the moment they happen, so a
+ * closed tab can no longer eat a run's worth of entries. */
+function bestiarySeen(id) {
+  if (!id) return;
+  if (!G.seenIds) {
+    G.seenIds = new Set();
+    try { for (const k of Object.keys(JSON.parse(localStorage.getItem('arcaneBestiarySeen') || '{}') || {})) G.seenIds.add(k); } catch (e) { /* ignore */ }
+  }
+  if (G.seenIds.has(id)) return;
+  G.seenIds.add(id);
+  try {
+    const seen = JSON.parse(localStorage.getItem('arcaneBestiarySeen') || '{}') || {};
+    seen[id] = 1;
+    localStorage.setItem('arcaneBestiarySeen', JSON.stringify(seen));
+  } catch (e) { /* ignore */ }
+}
+function bestiaryBump(id) {
+  if (!id) return;
+  try {
+    const tally = JSON.parse(localStorage.getItem('arcaneBestiary') || '{}') || {};
+    tally[id] = (tally[id] || 0) + 1;
+    localStorage.setItem('arcaneBestiary', JSON.stringify(tally));
+  } catch (e) { /* ignore */ }
 }
 
 function toggleBestiary(force) {
@@ -419,24 +437,25 @@ function toggleBestiary(force) {
   const show = force != null ? force : el.classList.contains('hidden');
   el.classList.toggle('hidden', !show);
   if (!show) return;
-  let tally = {};
+  let tally = {}, seen = {};
   try { tally = JSON.parse(localStorage.getItem('arcaneBestiary') || '{}') || {}; } catch (e) { /* ignore */ }
+  try { seen = JSON.parse(localStorage.getItem('arcaneBestiarySeen') || '{}') || {}; } catch (e) { /* ignore */ }
   const list = $('bestiary-list');
   list.innerHTML = '';
   let known = 0, total = 0;
   for (const [id, d] of Object.entries(MONSTERS)) {
     if (id === 'slimelet') continue; // the slime's halves share its page
     total++;
-    const kills = (tally[id] || 0) + (tally.slime && id === 'slime' ? 0 : 0) + (id === 'slime' ? (tally.slimelet || 0) : 0);
+    const kills = (tally[id] || 0) + (id === 'slime' ? (tally.slimelet || 0) : 0);
     const row = document.createElement('div');
-    const unlocked = kills > 0;
+    const unlocked = kills > 0 || !!seen[id] || (id === 'slime' && !!seen.slimelet);
     if (unlocked) known++;
     row.className = 'bestiary-row' + (unlocked ? '' : ' locked');
     row.innerHTML = unlocked
       ? `<span class="b-glyph" style="color:${d.color}">${d.glyph}</span>` +
         `<span class="b-name">${d.name}</span>` +
         `<span class="b-lore">${d.lore || ''}</span>` +
-        `<span class="b-kills">×${kills}</span>`
+        `<span class="b-kills">${kills > 0 ? '×' + kills : 'seen'}</span>`
       : `<span class="b-glyph" style="color:#3a3a52">?</span>` +
         `<span class="b-name" style="color:#5a5572">— unknown —</span>` +
         `<span class="b-lore">the dark has not shown you this yet</span>` +
@@ -902,6 +921,7 @@ const monsterAt = (x, y) => G.monsters.find(m => m.x === x && m.y === y);
 function recomputeFOV() {
   G.fovRadius = clamp(G.classDef.fov + (G.map.theme.fovMod || 0) + (ringIs('ring_focus') ? 1 : 0) + relicCount('r_lantern'), 5, 12);
   G.visible = computeFOV(G.map, G.player.x, G.player.y, G.fovRadius);
+  for (const m of G.monsters) if (!m.pet && m.id && G.visible.has(m.x + ',' + m.y)) bestiarySeen(m.id);
   for (const key of G.visible) {
     const [x, y] = key.split(',');
     const i = G.map.idx(+x, +y);
@@ -1281,7 +1301,11 @@ function killMonster(m) {
   if ((m.xp > 0 && !m.killedByPet) || m.boss) G.kills++;
   else if (m.killedByPet && m.xp > 0 && G.visible.has(m.x + ',' + m.y)) spawnFloater(m.x, m.y, 'no glory', '#9aa0b8');
   G.killsBy[m.name] = (G.killsBy[m.name] || 0) + 1;
-  if (m.id) G.bestiaryRun[m.id] = (G.bestiaryRun[m.id] || 0) + 1; // lifetime tally feeds the Bestiary
+  if (m.id) {
+    G.bestiaryRun[m.id] = (G.bestiaryRun[m.id] || 0) + 1; // run stats
+    bestiaryBump(m.id); // lifetime ledger, written the moment it happens
+    bestiarySeen(m.id); // a kill in the dark still counts as meeting it
+  }
   G.corpses.push({ x: m.x, y: m.y, glyph: m.glyph, color: m.color, id: m.id, faceL: m.faceL, life: 1, turns: hasBoon('b_coldrest') ? 30 : 18 });
   if (G.corpses.length > 40) G.corpses.shift();
   if (G.kills === 1) lichSay('firstKill');
@@ -1410,7 +1434,6 @@ function hurtPlayer(dmg, srcName) {
 function die(srcName) {
   cancelTravel();
   clearSave();
-  mergeBestiary();
   // leave an echo: future runs may find your body, and a third of your gold
   if (!G.daily) {
     try {
@@ -1488,7 +1511,6 @@ function deathTip(cause) {
 function winGame() {
   cancelTravel();
   clearSave();
-  mergeBestiary();
   G.state = 'WIN';
   // conducts: scored AND recorded as badges per class+difficulty (menu #3 —
   // the completionist audit: 'fired invisibly at win time, recorded nowhere')
@@ -2126,8 +2148,8 @@ function castExhume() {
   const sh = {
     id: 'shambler', name: 'shambler', glyph: 'z', color: '#9fd89f',
     pet: true, x: gx, y: gy,
-    hp: 5 + 2 * G.depth, maxHp: 5 + 2 * G.depth,
-    atk: 3 + Math.ceil(G.depth / 2), def: 0,
+    hp: 7 + 2 * G.depth, maxHp: 7 + 2 * G.depth,
+    atk: 4 + Math.ceil(G.depth / 2), def: 0,
     ttl: 25, xp: 0, sight: 7, awake: true, frozen: 0, skipT: 0, flashT: 0,
   };
   G.monsters.push(sh);
@@ -2187,13 +2209,15 @@ function petAct(m) {
   }
   const goal = (tgt && td <= 6) ? tgt : (cheb(m.x, m.y, p.x, p.y) > 2 ? p : null);
   if (!goal) return;
-  let best = null, bd = cheb(m.x, m.y, goal.x, goal.y);
+  const pf = computeDistField(G.map, goal.x, goal.y, 30);
+  let best = null, bd = pf[G.map.idx(m.x, m.y)];
+  if (bd === -1) bd = 9999;
   for (const [dx, dy] of DIRS8) {
     const nx = m.x + dx, ny = m.y + dy;
     if (!G.map.walkable(nx, ny) || monsterAt(nx, ny) || (nx === p.x && ny === p.y)) continue;
     if (!diagOpen(G.map, m.x, m.y, dx, dy)) continue;
-    const dd = cheb(nx, ny, goal.x, goal.y);
-    if (dd < bd) { bd = dd; best = [nx, ny]; }
+    const fd = pf[G.map.idx(nx, ny)];
+    if (fd !== -1 && fd < bd) { bd = fd; best = [nx, ny]; }
   }
   if (best) { m.x = best[0]; m.y = best[1]; monsterStepHazard(m); }
 }
@@ -3345,7 +3369,6 @@ function showBestLine() {
 showBestLine();
 
 function backToTitle() {
-  mergeBestiary(); // abandons count too — the dark remembers what you killed
   cancelTravel();
   G.state = 'TITLE';
   let pref = 'standard';

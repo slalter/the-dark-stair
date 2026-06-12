@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -800,12 +800,20 @@ console.log('\n=== weapons with souls · rings · actives ===');
 
   // BESTIARY (iter76, endgame menu #1): kills tally by id, merged at run end
   p = fresh('warrior');
-  { const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1;
+  { storeMap.delete('arcaneBestiary'); storeMap.delete('arcaneBestiarySeen'); G.seenIds = null;
+    const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1;
     g.attackMonster(m);
-    check('bestiary tracks the kill by id', G.bestiaryRun && G.bestiaryRun.rat === 1, JSON.stringify(G.bestiaryRun));
-    const tally = g.mergeBestiary();
-    check('merge folds the run into the tally', tally.rat >= 1, JSON.stringify(tally));
-    check('merge clears the run ledger', Object.keys(G.bestiaryRun).length === 0);
+    check('bestiary tracks the kill by id (run stats)', G.bestiaryRun && G.bestiaryRun.rat === 1, JSON.stringify(G.bestiaryRun));
+    const tally = JSON.parse(storeMap.get('arcaneBestiary') || '{}');
+    check('a kill writes through to the lifetime ledger instantly', tally.rat === 1, JSON.stringify(tally));
+    const seen = JSON.parse(storeMap.get('arcaneBestiarySeen') || '{}');
+    check('a kill counts as meeting it', seen.rat === 1, JSON.stringify(seen));
+    g.bestiarySeen('bat'); // sighting alone unlocks the page (the recomputeFOV hook calls this per visible foe)
+    check('sighting alone is recorded', JSON.parse(storeMap.get('arcaneBestiarySeen') || '{}').bat === 1);
+    const src82 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('the FOV pass marks every visible foe as met (source)', src82.includes("if (!m.pet && m.id && G.visible.has(m.x + ',' + m.y)) bestiarySeen(m.id)"));
+    check('seen-but-unkilled rows unlock (source)', src82.includes('kills > 0 || !!seen[id]'));
+    G.monsters.length = 0;
     check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
       Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
 
@@ -887,7 +895,8 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('saveRun persists the bestiary run ledger', src80.includes('bestiaryRun: G.bestiaryRun || {}'));
     check('loadRun restores the bestiary run ledger', src80.includes('G.bestiaryRun = s.bestiaryRun || {}'));
     check('travel never fears your own dead (watcher)', src80.includes('.filter(m => !m.pet && m.awake'));
-    check('shamblers carry a def stat (NaN guard)', /atk: 3 \+ Math\.ceil\(G\.depth \/ 2\), def: 0,/.test(src80)); }
+    check('shamblers heel on the BFS field, not greedy steps (source)', /function petAct[\s\S]{0,2500}computeDistField\(G\.map, goal\.x, goal\.y, 30\)/.test(src80));
+    check('shamblers carry a def stat (NaN guard)', /atk: 4 \+ Math\.ceil\(G\.depth \/ 2\), def: 0,/.test(src80)); }
   p = fresh('gravedigger');
   { const spot = adjSpot(p); const shp = { id: 'shambler', name: 'shambler', glyph: 'z', color: '#9fd89f', pet: true, x: spot[0], y: spot[1], hp: 9, maxHp: 9, atk: 4, def: 0, ttl: 25, xp: 0, sight: 7, awake: true, frozen: 0, skipT: 0, flashT: 0 };
     G.monsters.push(shp);
