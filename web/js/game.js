@@ -352,6 +352,17 @@ let dailyPending = false;
 const $ = id => document.getElementById(id);
 
 /* ---------- messages ---------- */
+/* one-time contextual teaches (fresh-eyes audit: zoom, diagonals,
+   hold-to-read, the Sanctum were NEVER discovered unprompted) */
+function teachOnce(key, msg) {
+  try {
+    if (localStorage.getItem('arcaneTeach_' + key)) return false;
+    localStorage.setItem('arcaneTeach_' + key, '1');
+  } catch (e) { /* private mode: teach every session, better than never */ }
+  addMsg(msg, 'm-gold');
+  return true;
+}
+
 function addMsg(text, cls = '') {
   const log = $('log');
   const div = document.createElement('div');
@@ -858,6 +869,13 @@ function afterPlayerTurn() {
   G.turn++;
   G.floorTurns++;
   const p = G.player;
+  // contextual teaches at the moments they matter (fresh-eyes audit)
+  if (G.turn === 25 && (typeof MOBILE_UI === 'undefined' || !MOBILE_UI)) teachOnce('zoom', 'The dark feels distant? X cycles the camera closer — five zoom levels.');
+  if (!G.usedDiag && G.turn > 8 && (typeof MOBILE_UI === 'undefined' || !MOBILE_UI)) {
+    const dg = G.monsters.some(m2 => m2.awake && Math.abs(m2.x - p.x) === 1 && Math.abs(m2.y - p.y) === 1 && G.visible.has(m2.x + ',' + m2.y));
+    if (dg) { if (teachOnce('diag', 'That foe stands at your corner — Q, E, Z and C step (and strike) diagonally.')) G.usedDiag = true; }
+  }
+  if (G.turn === 40 && typeof MOBILE_UI !== 'undefined' && MOBILE_UI) teachOnce('holdread', 'Hold any button or pack row to read what it does.');
   if (p.cleaveCd > 0) p.cleaveCd--;
   if (p.chargeCd > 0) p.chargeCd--;
   if (p.dashCd > 0) p.dashCd--;
@@ -1205,6 +1223,14 @@ const GENERAL_TIPS = [
   'Frozen foes take backstab damage from a rogue\'s blade — Frost Nova is not only a mage\'s escape.',
 ];
 function deathTip(cause) {
+  // first death ever: point at the Sanctum before any other lesson — the
+  // fresh-eyes player only found it by accident
+  try {
+    if (!localStorage.getItem('arcaneTeach_sanctum')) {
+      localStorage.setItem('arcaneTeach_sanctum', '1');
+      return 'Your soul embers survived you. Spend them in the SANCTUM — the doorway waits beneath the title screen.';
+    }
+  } catch (e) { /* ignore */ }
   // the most teachable death: falling with the cure in your pack
   const pi = (G.player.inventory || []).findIndex(e => e.id === 'potion_heal');
   if (pi >= 0) {
@@ -3493,7 +3519,7 @@ window.addEventListener('keydown', ev => {
     return;
   }
   if (key === 'o') { autoExplore(); return; }
-  if (MOVE_KEYS[key] && !ev.shiftKey) { tryMove(...MOVE_KEYS[key]); return; }
+  if (MOVE_KEYS[key] && !ev.shiftKey) { if ('qezc'.includes(key)) G.usedDiag = true; tryMove(...MOVE_KEYS[key]); return; }
   if (key === ' ' || key === '.') { addMsg('You wait, listening to the dark.', 'm-dim'); afterPlayerTurn(); return; }
   if ((key === 'enter' || ev.key === '>') && ev.shiftKey && G.state === 'PLAY' && !G.darkUsed) {
     // a speedrunner's key: route straight to the known dark stair
