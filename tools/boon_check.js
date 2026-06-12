@@ -66,7 +66,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, mergeBestiary, MONSTERS };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -620,6 +620,17 @@ console.log('\n=== weapons with souls · rings · actives ===');
 
   // every heavy truly rests after a whiff (Gruk parity)
   check('heavies rest after a whiff', String(g.monstersAct).includes('m.skipT = 1; // every heavy truly rests'));
+
+  // BESTIARY (iter76, endgame menu #1): kills tally by id, merged at run end
+  p = fresh('warrior');
+  { const spot = adjSpot(p); const m = g.spawnMonster('rat', spot[0], spot[1]); m.hp = 1;
+    g.attackMonster(m);
+    check('bestiary tracks the kill by id', G.bestiaryRun && G.bestiaryRun.rat === 1, JSON.stringify(G.bestiaryRun));
+    const tally = g.mergeBestiary();
+    check('merge folds the run into the tally', tally.rat >= 1, JSON.stringify(tally));
+    check('merge clears the run ledger', Object.keys(G.bestiaryRun).length === 0);
+    check('every monster carries lore', Object.entries(g.MONSTERS).every(([id, d]) => id === 'slimelet' ? true : !!d.lore),
+      Object.entries(g.MONSTERS).filter(([id, d]) => !d.lore).map(e => e[0]).join(',')); }
 
   // BLINK rework (iter75, user-approved): chosen tile, range 4, cost 6
   p = fresh('mage');

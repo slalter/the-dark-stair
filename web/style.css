@@ -584,3 +584,22 @@ body.mobile-ui #continue-line.hidden { display: none; }
 /* the ember loop, surfaced before the first death (fresh-eyes: 'would have
    changed how safe I felt experimenting for the entire first session') */
 .ember-hint { font: 12px Consolas, monospace; color: #9a91b8; opacity: 0.85; margin: 2px 0; }
+
+/* ---------- the bestiary (endgame menu #1) ---------- */
+#bestiary-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 58vh; overflow-y: auto; min-width: 420px; max-width: 92vw;
+  padding: 4px;
+}
+.bestiary-row {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  background: #14142a; border: 1px solid var(--panel-border); border-radius: 8px;
+  padding: 8px 12px;
+}
+.bestiary-row .b-glyph { font: bold 20px Consolas, monospace; width: 26px; text-align: center; }
+.bestiary-row .b-name { font: bold 13px Consolas, monospace; color: var(--text); min-width: 150px; }
+.bestiary-row .b-lore { font: 12px Consolas, monospace; color: #9a91b8; flex: 1; line-height: 1.4; }
+.bestiary-row .b-kills { font: bold 12px Consolas, monospace; color: var(--gold); white-space: nowrap; }
+.bestiary-row.locked { opacity: 0.45; }
+.bestiary-row.locked .b-lore { font-style: italic; }
+@media (max-width: 760px) { #bestiary-list { min-width: 0; width: 94vw; } .bestiary-row .b-name { min-width: 100px; } }

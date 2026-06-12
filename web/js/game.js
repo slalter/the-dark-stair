@@ -305,6 +305,51 @@ function sanctumOwned(id) {
   try { return !!(JSON.parse(localStorage.getItem('arcaneSanctum') || '{}'))[id]; } catch (e) { return false; }
 }
 let sanctumOpen = false;
+/* the Bestiary's memory: lifetime kills per monster, merged at run end
+   (endgame menu #1 — built on the killsBy data that already existed) */
+function mergeBestiary() {
+  let tally = {};
+  try { tally = JSON.parse(localStorage.getItem('arcaneBestiary') || '{}') || {}; } catch (e) { tally = {}; }
+  for (const [id, n] of Object.entries(G.bestiaryRun || {})) tally[id] = (tally[id] || 0) + n;
+  G.bestiaryRun = {};
+  try { localStorage.setItem('arcaneBestiary', JSON.stringify(tally)); } catch (e) { /* ignore */ }
+  return tally;
+}
+
+function toggleBestiary(force) {
+  const el = $('bestiary-screen');
+  if (!el) return;
+  const show = force != null ? force : el.classList.contains('hidden');
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  let tally = {};
+  try { tally = JSON.parse(localStorage.getItem('arcaneBestiary') || '{}') || {}; } catch (e) { /* ignore */ }
+  const list = $('bestiary-list');
+  list.innerHTML = '';
+  let known = 0, total = 0;
+  for (const [id, d] of Object.entries(MONSTERS)) {
+    if (id === 'slimelet') continue; // the slime's halves share its page
+    total++;
+    const kills = (tally[id] || 0) + (tally.slime && id === 'slime' ? 0 : 0) + (id === 'slime' ? (tally.slimelet || 0) : 0);
+    const row = document.createElement('div');
+    const unlocked = kills > 0;
+    if (unlocked) known++;
+    row.className = 'bestiary-row' + (unlocked ? '' : ' locked');
+    row.innerHTML = unlocked
+      ? `<span class="b-glyph" style="color:${d.color}">${d.glyph}</span>` +
+        `<span class="b-name">${d.name}</span>` +
+        `<span class="b-lore">${d.lore || ''}</span>` +
+        `<span class="b-kills">×${kills}</span>`
+      : `<span class="b-glyph" style="color:#3a3a52">?</span>` +
+        `<span class="b-name" style="color:#5a5572">— unknown —</span>` +
+        `<span class="b-lore">the dark has not shown you this yet</span>` +
+        `<span class="b-kills"></span>`;
+    list.appendChild(row);
+  }
+  const bc = $('bestiary-count');
+  if (bc) bc.textContent = `${known} of ${total}`;
+}
+
 function toggleSanctum(force) {
   sanctumOpen = force != null ? force : !sanctumOpen;
   const el = $('sanctum-screen');
@@ -455,7 +500,7 @@ function newGame(classId) {
   $('log').innerHTML = '';
   G.state = 'PLAY';
   G.player = newPlayer(G.classDef);
-  G.turn = 0; G.kills = 0; G.totalXp = 0; G.killsBy = {};
+  G.turn = 0; G.kills = 0; G.totalXp = 0; G.killsBy = {}; G.bestiaryRun = {};
   G.goldEarned = 0; G.bonusScore = 0; G.potionsDrunk = 0; G.purchases = 0;
   G.lichSaid = {}; G.lichLastTurn = -99;
   clearSave();
@@ -1059,6 +1104,7 @@ function killMonster(m) {
   G.monsters.splice(idx, 1);
   if (m.xp > 0 || m.boss) G.kills++;
   G.killsBy[m.name] = (G.killsBy[m.name] || 0) + 1;
+  if (m.id) G.bestiaryRun[m.id] = (G.bestiaryRun[m.id] || 0) + 1; // lifetime tally feeds the Bestiary
   G.corpses.push({ x: m.x, y: m.y, glyph: m.glyph, color: m.color, id: m.id, faceL: m.faceL, life: 1 });
   if (G.corpses.length > 40) G.corpses.shift();
   if (G.kills === 1) lichSay('firstKill');
@@ -1178,6 +1224,7 @@ function hurtPlayer(dmg, srcName) {
 function die(srcName) {
   cancelTravel();
   clearSave();
+  mergeBestiary();
   // leave an echo: future runs may find your body, and a third of your gold
   if (!G.daily) {
     try {
@@ -1255,6 +1302,7 @@ function deathTip(cause) {
 function winGame() {
   cancelTravel();
   clearSave();
+  mergeBestiary();
   G.state = 'WIN';
   if (G.potionsDrunk === 0) { G.bonusScore += 150; addMsg('CONDUCT: Abstinent — not one potion drunk. +150 score.', 'm-gold'); }
   if (G.purchases === 0) { G.bonusScore += 100; addMsg('CONDUCT: No deal with merchants. +100 score.', 'm-gold'); }
@@ -2927,6 +2975,7 @@ function showBestLine() {
 showBestLine();
 
 function backToTitle() {
+  mergeBestiary(); // abandons count too — the dark remembers what you killed
   cancelTravel();
   G.state = 'TITLE';
   let pref = 'standard';
@@ -3469,7 +3518,12 @@ window.addEventListener('keydown', ev => {
       if (key === 's' || key === 'escape') toggleSanctum(false);
       return;
     }
+    if ($('bestiary-screen') && !$('bestiary-screen').classList.contains('hidden')) {
+      if (key === 'v' || key === 'escape') toggleBestiary(false);
+      return;
+    }
     if (key === 's') { toggleSanctum(true); return; }
+    if (key === 'v') { toggleBestiary(true); return; }
     if (key === 'c' && peekSave()) { loadRun(); return; }
     if (key === 't') { // cycle difficulty
       const ids = Object.keys(DIFFICULTIES);
@@ -3593,6 +3647,8 @@ window.addEventListener('keydown', ev => {
   if (hc) hc.addEventListener('click', () => $('help-screen').classList.add('hidden'));
   const cl = $('continue-line');
   if (cl) { cl.style.cursor = 'pointer'; cl.addEventListener('click', () => { if (G.state === 'TITLE' && peekSave()) loadRun(); }); }
+  const bl = $('bestiary-line');
+  if (bl) { bl.style.cursor = 'pointer'; bl.addEventListener('click', () => { if (G.state === 'TITLE') toggleBestiary(true); }); }
   const sl = $('sanctum-line'), dl2 = $('daily-line');
   if (sl) { sl.style.cursor = 'pointer'; sl.addEventListener('click', () => { if (G.state === 'TITLE') toggleSanctum(true); }); }
   if (dl2) { dl2.style.cursor = 'pointer'; dl2.addEventListener('click', () => { if (G.state === 'TITLE') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' })); }); }
