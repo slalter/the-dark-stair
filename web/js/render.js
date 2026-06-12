@@ -878,26 +878,42 @@ function draw(t) {
       else if (map.get(hx, hy) === T.DARKSTAIRS) { label = 'the dark stair'; sub = 'plunges PAST the next floor — the dark rules where you land'; }
       if (label) {
         ctx.font = 'bold 11px Consolas, monospace';
-        const w = Math.max(ctx.measureText(label).width, sub ? ctx.measureText(sub).width : 0) + 12;
         const { vw: nvw, vh: nvh } = camView();
-        const bx = clamp(hx * CELL + CELL / 2 - w / 2, CAM.x + 2, CAM.x + nvw - w - 2);
-        let by = clamp(hy * CELL - (sub ? 32 : 20), CAM.y + 2, CAM.y + nvh - 40);
+        const maxW = nvw - 8;
+        // long subs wrap at their ' · ' joints; a plate wider than the zoomed
+        // camera view inverted the clamp and clipped off-screen (Maya r1:
+        // '34 gold — step to buy · drops here sel…')
+        let subLines = sub ? [sub] : [];
+        const wide = lines => Math.max(ctx.measureText(label).width, ...lines.map(l => ctx.measureText(l).width), 0) + 12;
+        let w = wide(subLines);
+        if (w > maxW && sub && sub.includes(' · ')) {
+          const parts = sub.split(' · ');
+          const mid = Math.ceil(parts.length / 2);
+          subLines = [parts.slice(0, mid).join(' · '), parts.slice(mid).join(' · ')];
+          w = wide(subLines);
+        }
+        if (w > maxW) { ctx.font = 'bold 9px Consolas, monospace'; w = wide(subLines); }
+        w = Math.min(w, maxW);
+        const ph = 16 + subLines.length * 12;
+        const bx = clamp(hx * CELL + CELL / 2 - w / 2, CAM.x + 2, Math.max(CAM.x + 2, CAM.x + nvw - w - 2));
+        let by = clamp(hy * CELL - (ph + 4), CAM.y + 2, CAM.y + nvh - ph - 2);
         // never park the nameplate over a visible monster — an approaching foe
         // hidden behind a price tag reads as 'attacked from nowhere'
         const covers = (yy) => G.monsters.some(mm => G.visible.has(mm.x + ',' + mm.y)
           && mm.x * CELL + CELL > bx && mm.x * CELL < bx + w
-          && mm.y * CELL + CELL > yy && mm.y * CELL < yy + (sub ? 28 : 16));
+          && mm.y * CELL + CELL > yy && mm.y * CELL < yy + ph);
         if (covers(by)) {
-          const below = clamp(hy * CELL + CELL + 4, 2, WORLD_H - 40);
+          const below = clamp(hy * CELL + CELL + 4, 2, WORLD_H - ph - 2);
           if (!covers(below)) by = below;
         }
         ctx.fillStyle = 'rgba(8,8,16,.78)';
-        ctx.fillRect(bx, by, w, sub ? 28 : 16);
+        ctx.fillRect(bx, by, w, ph);
         ctx.strokeStyle = 'rgba(199,164,255,.4)';
-        ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, sub ? 27 : 15);
+        ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, ph - 1);
         ctx.fillStyle = '#e8e2f0';
         ctx.fillText(label, bx + w / 2, by + 9);
-        if (sub) { ctx.fillStyle = '#9a91b8'; ctx.fillText(sub, bx + w / 2, by + 21); }
+        ctx.fillStyle = '#9a91b8';
+        subLines.forEach((l, li) => ctx.fillText(l, bx + w / 2, by + 21 + li * 12));
         ctx.font = GLYPH_FONT;
       }
     }
