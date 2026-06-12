@@ -561,6 +561,42 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('the stir beat passes after one round', m.stirring === false, `stirring ${m.stirring}`);
     G.monsters.length = 0; }
 
+  // round 2 (iter65): the certainty gate is CHEBYSHEV — a DIAGONAL cheb-2
+  // approach (eucl 2.83) must wake just as surely as a straight one
+  p = fresh('rogue');
+  { let spot = null;
+    for (const [dx, dy] of [[2, 2], [-2, -2], [2, -2], [-2, 2]]) {
+      if (G.map.walkable(p.x + dx, p.y + dy) && !g.monsterAt(p.x + dx, p.y + dy)) { spot = [p.x + dx, p.y + dy]; break; }
+    }
+    if (!spot) console.log('SKIP  diagonal knife-range — no open diagonal at 2,2 on this seed');
+    else {
+      const m = g.spawnMonster('rat', spot[0], spot[1]); m.awake = false;
+      G.visible.add(m.x + ',' + m.y); G.visible.add(p.x + ',' + p.y);
+      g.monstersAct();
+      check('DIAGONAL knife-range notice is certain', m.awake === true, `awake ${m.awake} at cheb 2 diagonal`);
+      G.monsters.length = 0; } }
+
+  // round 2 (iter65): a leashed Gruk HOLDS the stair while unseen — the
+  // LOS-blind chase must not drag him back out (the 6-turn patrol loop)
+  fresh('warrior');
+  { const sp = G.stairsPos || G.map.stairsPos;
+    if (!sp) console.log('SKIP  gruk-holds-post — no stairsPos');
+    else {
+      let gs = null;
+      for (const [dx, dy] of g.DIRS8.concat([[0, 0]])) {
+        if (G.map.walkable(sp.x + dx, sp.y + dy) && !g.monsterAt(sp.x + dx, sp.y + dy)) { gs = [sp.x + dx, sp.y + dy]; break; }
+      }
+      const m = g.spawnMonster('warlord', gs[0], gs[1]);
+      m.awake = true; m.leashed = true;
+      G.visible.clear(); // player sees nothing; gruk unseen
+      const x0 = m.x, y0 = m.y;
+      g.monstersAct(); g.monstersAct(); g.monstersAct();
+      check('a leashed unseen Gruk holds his post', m.x === x0 && m.y === y0, `moved to ${m.x},${m.y} from ${x0},${y0}`);
+      G.monsters.length = 0; } }
+
+  // round 2 (iter65): a sleepwalker that drifts into knife range startles
+  check('sleepwalkers startle awake at knife range', String(g.monstersAct).includes('blunders into you and startles awake'));
+
   // the cry is stopped by stone: scan the map for an open-wall-open pinch
   fresh('warrior');
   { let blocked = null, open = null;

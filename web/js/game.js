@@ -2107,9 +2107,12 @@ function monstersAct() {
       let wakes = seen && d <= sight;
       // stealth audit: the all-dice gate made point-blank stare-downs routine
       // (4-6 turns beside a dozing goblin) while the sight boundary almost
-      // never fired. Knife range (d<=2) is now CERTAIN; the dice only govern
-      // the 2..sight band — Shadowstep still buys the approach.
-      if (wakes && (G.classDef.sneak || 0) > 0 && !m.boss && !m.mini && d > 2) {
+      // never fired. Knife range is now CERTAIN; the dice only govern
+      // the outer band — Shadowstep still buys the approach. The gate is
+      // CHEBYSHEV like all game distance: round 2 of the audit found the
+      // euclidean version left diagonal stare-downs alive (10 beats
+      // nose-to-diagonal with a bat).
+      if (wakes && (G.classDef.sneak || 0) > 0 && !m.boss && !m.mini && cheb(m.x, m.y, p.x, p.y) > 2) {
         let wakeCh = d <= 3 ? 0.15 : 0.05;
         if (hasBoon('b_ghost')) wakeCh *= 0.5;
         wakes = RNG.chance(wakeCh);
@@ -2135,7 +2138,15 @@ function monstersAct() {
         // the noticer itself: notice -> '?' beat -> act (was acting same turn)
         if (!m.boss && !m.mini) continue;
       } else {
-        if (RNG.chance(0.25)) wander(m);
+        if (RNG.chance(0.25)) {
+          wander(m);
+          // a sleepwalker that drifts INTO knife range startles awake right
+          // there — it must not finish the phase snoring beside you
+          if (seen && cheb(m.x, m.y, p.x, p.y) <= 2 && G.visible.has(m.x + ',' + m.y)) {
+            m.awake = true; m.stirring = true;
+            addMsg(`${TheM(m)} blunders into you and startles awake!`, 'm-dim');
+          }
+        }
         continue;
       }
     }
@@ -2326,6 +2337,10 @@ function monstersAct() {
     // runners escape — but while he can SEE you, he commits to the kill
     // (standing 8 tiles out used to bounce him between leash and chase forever)
     const leashD = (m.mini && G.stairsPos) ? cheb(m.x, m.y, G.stairsPos.x, G.stairsPos.y) : 0;
+    // home and unseen = he HOLDS the stair (round-2 audit: unleashing at <=4
+    // let the LOS-blind chase drag him out again — a permanent 6-turn patrol
+    // loop with the leash bark re-arming every lap)
+    if (m.mini && m.leashed && !seen && leashD <= 4) continue;
     if (m.mini && !seen && G.stairsPos && (leashD > 6 || (m.leashed && leashD > 4))) {
       const back = computeDistField(G.map, G.stairsPos.x, G.stairsPos.y, 60);
       let bb = null, bbd = back[G.map.idx(m.x, m.y)];
