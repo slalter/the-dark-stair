@@ -970,6 +970,14 @@ console.log('\n=== weapons with souls · rings · actives ===');
     check('reads ride the save', src83.includes('reads: G.reads || {},') && src83.includes('G.reads = s.reads || {};'));
     check('the mirror rests two turns (anti-lock)', src83.includes('p.stanceCd = 2;')); }
 
+  // DAILY BOARD (iter84, menu 5A): the gates that keep the cabinet honest
+  { const src84 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('only recorded dailies reach the board', /if \(G\.daily && !G\.dailyPractice\) \{[\s\S]{0,700}G\.dailyResult = \{/.test(src84));
+    check('a posted daily never posts again', src84.includes("localStorage.getItem('arcaneDailyPosted') === G.dailyResult.daily_key"));
+    check('the post marks the day before the wire', /setItem\('arcaneDailyPosted', r\.daily_key\)/.test(src84));
+    check('the board is a luxury, never a dependency', src84.includes("typeof fetch === 'undefined'") && src84.includes('the game never waits on it'));
+    check('the board posts to the same-origin api', src84.includes("fetch('/api/dark-stair/daily-score'")); }
+
   // VEX'S BLOCKER (iter80 confirm round): a resumed run must keep killing
   { const src80 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
     check('saveRun persists the bestiary run ledger', src80.includes('bestiaryRun: G.bestiaryRun || {}'));

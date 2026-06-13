@@ -112,6 +112,7 @@
           <p id="bestiary-line">[V] the Bestiary — what the dark has shown you</p>
           <p id="torch-line" class="hidden ember-hint"></p>
           <p id="daily-line">[D] daily challenge — one seeded dungeon, same for everyone today</p>
+          <p id="board-line" class="hidden ember-hint"></p>
           <p id="best-line"></p>
           <p id="conduct-line" class="hidden ember-hint"></p>
           <p id="record-line" class="hidden ember-hint"></p>
@@ -135,6 +136,15 @@
         <p class="press" id="cut-hint">— press any key —</p>
       </div>
 
+      <div id="initials-screen" class="overlay hidden">
+        <h1 class="gold" style="font-size:22px;letter-spacing:5px">THE BOARD ASKS YOUR NAME</h1>
+        <p class="tagline">Three letters, arcade rules. Your daily run goes up for everyone to chase.</p>
+        <div style="display:flex;gap:10px;justify-content:center;align-items:center">
+          <input id="initials-input" maxlength="3" autocomplete="off" spellcheck="false"
+                 style="width:110px;text-align:center;font:700 28px Consolas,monospace;letter-spacing:8px;text-transform:uppercase;background:rgba(15,15,26,.92);color:#ffd75e;border:1px solid #2c2c44;border-radius:6px;padding:8px 4px">
+          <button id="initials-submit" class="boon-card" style="width:auto;padding:12px 22px">CARVE IT</button>
+        </div>
+      </div>
       <div id="boon-screen" class="overlay hidden">
         <h1 class="gold" style="font-size:24px;letter-spacing:6px">THE DARK OFFERS GIFTS</h1>
         <p class="tagline">Choose one. It will not offer twice.</p>

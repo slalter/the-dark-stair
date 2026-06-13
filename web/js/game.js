@@ -1468,6 +1468,7 @@ function die(srcName) {
     const tipEl = $('death-tip');
     if (tipEl) tipEl.textContent = '“' + deathTip(G.deathCause) + '”';
     $('death-screen').classList.remove('hidden');
+    maybeOfferInitials();
   }, 950);
 }
 
@@ -1535,6 +1536,7 @@ function winGame() {
     $('win-stats').innerHTML = endStatsHtml();
   wireShare('btn-share-win', true);
     $('win-screen').classList.remove('hidden');
+    maybeOfferInitials();
   });
 }
 
@@ -1591,6 +1593,11 @@ function saveBest() {
         localStorage.setItem('arcaneDaily', JSON.stringify({ ...rec, date: dailyKey() }));
       }
       localStorage.setItem('arcaneDailyPlayed', dailyKey()); // the seed is spent
+      // the board hears about it exactly once, at this same beat
+      G.dailyResult = {
+        daily_key: dailyKey(), class_id: G.classId, score: rec.score,
+        turns: G.turn, depth: G.depth, won: rec.won,
+      };
     }
   } catch (e) { /* storage unavailable */ }
 }
@@ -3429,6 +3436,7 @@ function backToTitle() {
   setDifficulty(pref);
   showBestLine();
   updateContinueLine();
+  fetchDailyBoard();
   $('death-screen').classList.add('hidden');
   $('win-screen').classList.add('hidden');
   $('title-screen').classList.remove('hidden');
@@ -3626,6 +3634,65 @@ function updateConductLine() {
 /* WIN RECORDS (endgame menu #6): the title remembers every hero's finest
  * hour, per difficulty. Wins only count from the WIN state, so the
  * abandon-path saveBest can raise a best score but never mint a victory. */
+/* ---------- the daily board: one browser, one attempt, one line of glory ---------- */
+function boardToken() {
+  let t = null;
+  try { t = localStorage.getItem('arcaneBoardToken'); } catch (e) { /* ignore */ }
+  if (!t) {
+    t = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID()
+      : 'tok-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    try { localStorage.setItem('arcaneBoardToken', t); } catch (e) { /* ignore */ }
+  }
+  return t;
+}
+/* a recorded daily posts ONCE — the gate is G.daily && !G.dailyPractice, and
+ * arcaneDailyPosted remembers across reloads (the server's unique constraint
+ * backs all of this up) */
+function maybeOfferInitials() {
+  if (!G.dailyResult) return;
+  try { if (localStorage.getItem('arcaneDailyPosted') === G.dailyResult.daily_key) return; } catch (e) { /* ignore */ }
+  const el = $('initials-screen');
+  if (!el) return;
+  const input = $('initials-input');
+  try { input.value = localStorage.getItem('arcaneInitials') || ''; } catch (e) { /* ignore */ }
+  el.classList.remove('hidden');
+  setTimeout(() => input.focus(), 50);
+}
+function submitInitials() {
+  const input = $('initials-input');
+  const initials = (input.value || '???').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || '???';
+  try { localStorage.setItem('arcaneInitials', initials); } catch (e) { /* ignore */ }
+  $('initials-screen').classList.add('hidden');
+  postDailyScore(initials);
+}
+function postDailyScore(initials) {
+  const r = G.dailyResult;
+  if (!r || typeof fetch === 'undefined') return;
+  try { localStorage.setItem('arcaneDailyPosted', r.daily_key); } catch (e) { /* ignore */ }
+  fetch('/api/dark-stair/daily-score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...r, initials, browser_token: boardToken() }),
+  }).then(resp => resp.json()).then(body => {
+    if (body && body.accepted) addMsg(`Your run stands at #${body.rank} on today's board.`, 'm-gold');
+  }).catch(() => { /* the board is a luxury — the game never waits on it */ });
+}
+function fetchDailyBoard() {
+  const el = $('board-line');
+  if (!el || typeof fetch === 'undefined') return;
+  fetch('/api/dark-stair/daily-leaderboard?date=' + encodeURIComponent(dailyKey()))
+    .then(resp => resp.json())
+    .then(body => {
+      if (!body || !body.scores || !body.scores.length) { el.classList.add('hidden'); return; }
+      const bits = body.scores.slice(0, 5).map((s, i) =>
+        `${i + 1}. <b>${s.initials}</b> ${s.score}${s.won ? ' ⚔' : ''}`);
+      el.innerHTML = `today's board: ${bits.join(' · ')}` +
+        (body.total > 5 ? ` <span style="opacity:.7">(${body.total} raced)</span>` : '');
+      el.classList.remove('hidden');
+    })
+    .catch(() => el.classList.add('hidden'));
+}
+
 function recordRun(won) {
   let r = { wins: 0, best: 0, depth: 0 };
   try {
@@ -3828,6 +3895,10 @@ const MOVE_KEYS = {
   q: [-1, -1], e: [1, -1], z: [-1, 1], c: [1, 1],
 };
 
+{ const ib = $('initials-submit'), ii = $('initials-input');
+  if (ib) ib.addEventListener('click', () => submitInitials());
+  if (ii) ii.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') submitInitials(); });
+}
 for (const card of document.querySelectorAll('.class-card')) {
   card.addEventListener('click', () => {
     Sfx.ensure(); Music.start();
@@ -4539,5 +4610,6 @@ let joySuppressClick = false;
 updateTorchLine();
 updateConductLine();
 updateRecordLine();
+fetchDailyBoard();
 // title boot: the daily line carries today's date from the first paint
 (() => { const dl = $('daily-line'); if (dl) dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`; })();
