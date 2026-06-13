@@ -287,6 +287,7 @@ function botTurn(policy, stats) {
 const cls = process.argv[2] || 'warrior';
 const runs = parseInt(process.argv[3] || '50', 10);
 const policy = (process.argv.find(a => a.startsWith('--policy=')) || '--policy=smart').split('=')[1];
+const heat = parseInt((process.argv.find(a => a.startsWith('--heat=')) || '--heat=0').split('=')[1], 10) || 0;
 const diff = (process.argv.find(a => a.startsWith('--diff=')) || '--diff=standard').split('=')[1];
 const asJson = process.argv.includes('--json');
 game.setDifficulty(diff);
@@ -301,7 +302,7 @@ const agg = {
   levelAtFloor3: [], hpRatioAtFloor3: [],
 };
 for (let r = 0; r < runs; r++) {
-  newGame(cls);
+  (G.nextHeat = heat, newGame(cls));
   const stats = { potions: 0, shopVisits: 0 };
   let guard = 0;
   let sawFloor3 = false;

@@ -256,3 +256,11 @@ Target band: 5–20% (skill class). History (smart/Veteran):
 Lesson (rhymes with pilgrim's): the band moved when the VERB got a skill-expression
 mechanic (chain on success), not when stats rose. Ranged-heavy floors remain the
 class's designed weakness — steel answers only steel.
+
+## 2026-06-13 — iter85: ASCENSION HEAT (menu #7)
+Heat N: monHp/monAtk +8%·N, dreadAt −10·N, score +10%·N. Sample batteries (smart/Veteran):
+- warrior heat 1: 12% (n=25) — one honest rung below the 17% baseline ✓
+- warrior heat 3: 0% (n=15) — top rungs are for humans with builds, as intended
+- gravedigger heat 1: 0% (n=15, noise band)
+- heat 0 regression: warrior 7% (n=15) — multiplier paths neutral at heat 0 ✓
+Zero stalls in all four. Heats 4-5 deliberately uncalibrated: they are the wall.

@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem, castMirrorStance, parryRiposte };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem, castMirrorStance, parryRiposte, recordHeatUnlock };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -969,6 +969,50 @@ console.log('\n=== weapons with souls · rings · actives ===');
   { const src83 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
     check('reads ride the save', src83.includes('reads: G.reads || {},') && src83.includes('G.reads = s.reads || {};'));
     check('the mirror rests two turns (anti-lock)', src83.includes('p.stanceCd = 2;')); }
+
+  // ASCENSION HEAT (iter85, menu #7): the dark burns hotter above your first win
+  p = fresh('warrior');
+  { G.monsters.length = 0;
+    G.heat = 0;
+    const cold = g.spawnMonster('golem', 2, 2);
+    G.heat = 5;
+    const hot = g.spawnMonster('golem', 4, 4);
+    const ratio = hot.maxHp / cold.maxHp;
+    check('heat 5 grows monsters ~40%', ratio > 1.32 && ratio < 1.48, `ratio ${ratio.toFixed(3)} (${cold.maxHp} -> ${hot.maxHp})`);
+    check('heat grows the claws too', hot.atk > cold.atk, `${cold.atk} -> ${hot.atk}`);
+    G.monsters.length = 0;
+    // score pays the climb
+    G.heat = 0; G.goldEarned = 100; G.kills = 0; G.bonusScore = 0; G.depth = 1;
+    const s0 = g.score();
+    G.heat = 2;
+    const s2 = g.score();
+    check('heat 2 pays +20% score', s2 === Math.round(s0 * 1.2), `${s0} -> ${s2}`);
+    G.heat = 0; G.goldEarned = 0;
+    const src85 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
+    check('the hunt comes sooner under heat', src85.includes('G.diff.dreadAt - heatDread() - dreadShift()'));
+    check('dailies stay the fair seed', src85.includes('G.heat = G.daily ? 0 : (G.nextHeat || 0)'));
+    check('heat rides the save', src85.includes('heat: G.heat || 0,') && src85.includes('G.heat = s.heat || 0;'));
+    // the ladder: a win at heat N opens N+1, capped at 5
+    storeMap.delete('arcaneHeat');
+    G.heat = 0; G.classId = 'warrior'; G.daily = false;
+    g.recordHeatUnlock();
+    let h = JSON.parse(storeMap.get('arcaneHeat') || '{}');
+    check('first win opens heat 1', h.warrior === 1, JSON.stringify(h));
+    G.heat = 4;
+    g.recordHeatUnlock();
+    h = JSON.parse(storeMap.get('arcaneHeat') || '{}');
+    check('a heat-4 win opens heat 5', h.warrior === 5, JSON.stringify(h));
+    G.heat = 5;
+    g.recordHeatUnlock();
+    h = JSON.parse(storeMap.get('arcaneHeat') || '{}');
+    check('the ladder caps at 5', h.warrior === 5, JSON.stringify(h));
+    // records remember the heat of a win
+    storeMap.delete('arcaneRecords');
+    G.heat = 3; G.diffId = 'standard'; G.state = 'WIN';
+    const rr = g.recordRun(true);
+    check('records carry the heat of the win', rr.heat === 3, JSON.stringify(rr));
+    G.state = 'PLAY'; G.heat = 0;
+    storeMap.delete('arcaneHeat'); storeMap.delete('arcaneRecords'); }
 
   // DAILY BOARD (iter84, menu 5A): the gates that keep the cabinet honest
   { const src84 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');

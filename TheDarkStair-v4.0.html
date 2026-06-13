@@ -3442,7 +3442,60 @@ const playerDodge = () => clamp(G.player.dodge + 0.04 * relicCount('r_quick') + 
   + (ringIs('ring_swift') ? 0.08 : 0)
   - (G.map && G.map.get(G.player.x, G.player.y) === T.WATER ? 0.15 : 0), 0, 0.75);
 // score counts gold EARNED (spending costs nothing) plus a win bonus that decays with dawdling
-const score = () => Math.round(G.diff.scoreMult * (
+/* ---------- ascension heat: the dark burns hotter above your first win ---------- */
+const heatMonMult = () => 1 + 0.08 * (G.heat || 0);
+const heatScoreMult = () => 1 + 0.1 * (G.heat || 0);
+const heatDread = () => 10 * (G.heat || 0);
+function heatUnlocked(classId) {
+  try { return (JSON.parse(localStorage.getItem('arcaneHeat') || '{}') || {})[classId] || 0; } catch (e) { return 0; }
+}
+function heatSel(classId) {
+  try {
+    const sel = (JSON.parse(localStorage.getItem('arcaneHeatSel') || '{}') || {})[classId] || 0;
+    return Math.min(sel, heatUnlocked(classId));
+  } catch (e) { return 0; }
+}
+function cycleHeat(classId) {
+  const max = heatUnlocked(classId);
+  if (max <= 0) return;
+  try {
+    const sels = JSON.parse(localStorage.getItem('arcaneHeatSel') || '{}') || {};
+    sels[classId] = ((sels[classId] || 0) + 1) % (max + 1);
+    localStorage.setItem('arcaneHeatSel', JSON.stringify(sels));
+  } catch (e) { /* ignore */ }
+  updateHeatChips();
+}
+function updateHeatChips() {
+  for (const card of document.querySelectorAll('.class-card')) {
+    const cid = card.dataset.class;
+    let chip = card.querySelector('.cc-heat');
+    const max = heatUnlocked(cid);
+    if (max <= 0) { if (chip) chip.remove(); continue; }
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.className = 'cc-heat';
+      chip.title = 'won with this hero: the dark can burn hotter — click to set the heat (foes +8%/heat, the hunt comes sooner, score +10%/heat)';
+      chip.addEventListener('click', ev => { ev.stopPropagation(); cycleHeat(cid); });
+      card.appendChild(chip);
+    }
+    const sel = heatSel(cid);
+    chip.textContent = sel > 0 ? `🔥${sel}` : '🔥·';
+    chip.style.opacity = sel > 0 ? '1' : '0.55';
+  }
+}
+function recordHeatUnlock() {
+  try {
+    const h = JSON.parse(localStorage.getItem('arcaneHeat') || '{}') || {};
+    const next = Math.min(5, (G.heat || 0) + 1);
+    if ((h[G.classId] || 0) < next) {
+      h[G.classId] = next;
+      localStorage.setItem('arcaneHeat', JSON.stringify(h));
+      addMsg(`THE DARK BURNS HOTTER — heat ${next} unlocked for the ${G.classDef.name}.`, 'm-gold');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+const score = () => Math.round(G.diff.scoreMult * heatScoreMult() * (
   G.goldEarned + G.kills * 8 + (G.depth - 1) * 60 + G.bonusScore +
   (G.state === 'WIN' ? 250 + Math.max(0, 2500 - 2 * G.turn) : 0) // tempo audit: at 1000-flat, farming out-paid speed on every floor
 ));
@@ -3480,6 +3533,9 @@ function newGame(classId) {
   }
   G.classId = classId;
   G.classDef = CLASSES[classId];
+  G.heat = G.daily ? 0 : (G.nextHeat || 0); // dailies stay the fair seed — heat never touches them
+  G.nextHeat = 0;
+  if (G.heat > 0) addMsg(`HEAT ${G.heat} — the dark is ${G.heat * 8}% crueler and hunts sooner. Score pays +${G.heat * 10}%.`, 'm-gold');
   G.prostrated = false; G.relicFloor = 0; G.relicGiven = 0; G.reads = {};
   G.fovRadius = G.classDef.fov;
   $('log').innerHTML = '';
@@ -3724,8 +3780,8 @@ function startLevel(depth) {
 function spawnMonster(id, x, y) {
   const d = MONSTERS[id];
   const deep = 1; // power now comes from choices; the dark stays constant
-  const hp = Math.max(1, Math.round(d.hp * G.diff.monHp * deep));
-  const atk = Math.max(1, Math.round(d.atk * G.diff.monAtk * deep));
+  const hp = Math.max(1, Math.round(d.hp * G.diff.monHp * heatMonMult() * deep));
+  const atk = Math.max(1, Math.round(d.atk * G.diff.monAtk * heatMonMult() * deep));
   G.monsters.push({
     id, name: d.name, glyph: d.glyph, color: d.color,
     hp, maxHp: hp, atk, def: d.def, xp: d.xp, sight: d.sight,
@@ -3954,7 +4010,7 @@ function afterPlayerTurn() {
   }
   if (G.shroudT > 0) { G.shroudT--; if (G.shroudT === 0) addMsg('The dark-stair shroud thins away.', 'm-dim'); }
   // the dread clock: linger too long and the dark sends MELEE hunters (capped, worthless XP)
-  const dreadAt = G.diff.dreadAt - dreadShift();
+  const dreadAt = G.diff.dreadAt - heatDread() - dreadShift();
   if (G.floorTurns === dreadAt - 29) addMsg('The shadows lean closer. Best not linger.', 'm-dim');
   if (G.depth !== FINAL_DEPTH && G.floorTurns > dreadAt && (G.floorTurns - dreadAt) % 30 === 0) {
     // tempo audit closed two holes here: (1) an unexplored start room
@@ -4356,6 +4412,7 @@ function winGame() {
   if (G.potionsDrunk === 0) { G.bonusScore += 150; addMsg('CONDUCT: Abstinent — not one potion drunk. +150 score.', 'm-gold'); earned.push('abstinent'); }
   if (G.purchases === 0) { G.bonusScore += 100; addMsg('CONDUCT: No deal with merchants. +100 score.', 'm-gold'); earned.push('nodeal'); }
   if (G.darkUsed) { G.bonusScore += 75; addMsg('CONDUCT: Darkstrider — you dared the dark stair and lived to win. +75 score.', 'm-gold'); earned.push('darkstrider'); }
+  if (!G.daily) recordHeatUnlock();
   if (earned.length && !G.daily) recordConducts(earned);
   if (window.GuruTelemetry) GuruTelemetry.win({
     depth: G.depth, turn: G.turn, kills: G.kills, gold_earned: G.goldEarned,
@@ -6124,7 +6181,7 @@ function buildSpellPanel() {
 function updateUI() {
   const p = G.player;
   if (!p) return;
-  $('hero-name').textContent = 'THE ' + G.classDef.name.toUpperCase();
+  $('hero-name').textContent = 'THE ' + G.classDef.name.toUpperCase() + (G.heat > 0 ? ' 🔥' + G.heat : '');
   $('hp-text').textContent = `${p.hp} / ${p.maxHp}`;
   $('hp-fill').style.width = (100 * p.hp / p.maxHp) + '%';
   $('atk-text').textContent = playerAtk();
@@ -6194,8 +6251,8 @@ function updateUI() {
   const statusBits = [];
   if (p.poison > 0) statusBits.push(`<span class="st-poison">☠ poisoned (${p.poison})<\/span>`);
   if (p.keys > 0) statusBits.push(`<span style="color:var(--gold)">⚿ key ×${p.keys}<\/span>`);
-  if (G.depth !== FINAL_DEPTH && G.floorTurns > G.diff.dreadAt - dreadShift()) statusBits.push('<span style="color:var(--red)">⌛ the dark hunts you<\/span>');
-  else if (G.depth !== FINAL_DEPTH && G.floorTurns > G.diff.dreadAt - dreadShift() - 30) statusBits.push('<span style="color:#c98a5e">⌛ the dark stirs…<\/span>');
+  if (G.depth !== FINAL_DEPTH && G.floorTurns > G.diff.dreadAt - heatDread() - dreadShift()) statusBits.push('<span style="color:var(--red)">⌛ the dark hunts you<\/span>');
+  else if (G.depth !== FINAL_DEPTH && G.floorTurns > G.diff.dreadAt - heatDread() - dreadShift() - 30) statusBits.push('<span style="color:#c98a5e">⌛ the dark stirs…<\/span>');
   if (G.daily) statusBits.push('<span style="color:var(--purple)">◆ daily<\/span>');
   if (hasBoon('b_momentum') && p.momentum > 0) statusBits.push('<span style="color:var(--gold)">⚔ momentum +' + p.momentum + '<\/span>');
   if (p.bulwarkT > 0) statusBits.push('<span style="color:var(--blue)">🛡 bulwark (' + p.bulwarkT + ')<\/span>');
@@ -6270,6 +6327,7 @@ function backToTitle() {
   setDifficulty(pref);
   showBestLine();
   updateContinueLine();
+  updateHeatChips();
   fetchDailyBoard();
   $('death-screen').classList.add('hidden');
   $('win-screen').classList.add('hidden');
@@ -6364,7 +6422,7 @@ function saveRun() {
       projectiles: G.projectiles.map(pr => ({ fx: pr.fx, fy: pr.fy, dx: pr.dx, dy: pr.dy,
         speed: pr.speed, dmg: pr.dmg, color: pr.color, fromPlayer: !!pr.fromPlayer, drain: !!pr.drain })),
       shells: G.shells, gildedWarned: G.gildedWarned || {}, wareWarn: G.wareWarn || {}, shopSeen: !!G.shopSeen, darkUsed: !!G.darkUsed, shroudT: G.shroudT || 0, dailyPractice: !!G.dailyPractice,
-      corpses: G.corpses, prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0, reads: G.reads || {},
+      corpses: G.corpses, prostrated: !!G.prostrated, relicFloor: G.relicFloor || 0, relicGiven: G.relicGiven || 0, reads: G.reads || {}, heat: G.heat || 0,
       map: {
         w: m.w, h: m.h, depth: m.depth,
         tiles: Array.from(m.tiles), explored: Array.from(m.explored), fovSeen: Array.from(m.fovSeen),
@@ -6398,6 +6456,7 @@ function loadRun() {
   G.lichSaid = s.lichSaid || {}; G.echo = s.echo || null; G.darkNext = !!s.darkNext; G.corpses = s.corpses || [];
   G.bestiaryRun = s.bestiaryRun || {}; // a resumed run must keep killing cleanly (Vex blocker: undefined here threw in killMonster)
   G.prostrated = !!s.prostrated; G.relicFloor = s.relicFloor || 0; G.relicGiven = s.relicGiven || 0; G.reads = s.reads || {};
+  G.heat = s.heat || 0;
   G.dailyBase = s.dailyBase != null ? s.dailyBase : null;
   G.projectiles = (s.projectiles || []).map(pr => ({ ...pr, src: null }));
   G.shells = s.shells || [];
@@ -6533,7 +6592,7 @@ function recordRun(won) {
     const led = JSON.parse(localStorage.getItem('arcaneRecords') || '{}') || {};
     const key = `${G.classId}_${G.diffId}`;
     r = led[key] || r;
-    if (won) r.wins += 1;
+    if (won) { r.wins += 1; if ((G.heat || 0) > (r.heat || 0)) r.heat = G.heat; }
     const sc = score();
     if (sc > r.best) r.best = sc;
     if (G.depth > r.depth) r.depth = G.depth;
@@ -6553,15 +6612,16 @@ function updateRecordLine() {
     if (!(r.wins > 0)) continue; // best-without-win stays a private memory
     const us = key.indexOf('_');
     const cls = key.slice(0, us), diff = key.slice(us + 1);
-    byClass[cls] = byClass[cls] || { wins: 0, details: [] };
+    byClass[cls] = byClass[cls] || { wins: 0, heat: 0, details: [] };
     byClass[cls].wins += r.wins;
+    if ((r.heat || 0) > byClass[cls].heat) byClass[cls].heat = r.heat;
     const dname = (DIFFICULTIES[diff] && DIFFICULTIES[diff].name) || diff;
     byClass[cls].details.push(`${dname} ×${r.wins} — best ${r.best}`);
   }
   const bits = [];
   for (const [cls, agg] of Object.entries(byClass)) {
     const cname = (CLASSES[cls] && CLASSES[cls].name) || cls;
-    bits.push(`<span title="${agg.details.join(' · ')}">⚔ ${cname} ×${agg.wins}<\/span>`);
+    bits.push(`<span title="${agg.details.join(' · ')}">⚔ ${cname} ×${agg.wins}${agg.heat > 0 ? ' 🔥' + agg.heat : ''}<\/span>`);
   }
   el.classList.toggle('hidden', bits.length === 0);
   el.innerHTML = bits.length ? 'victories: ' + bits.join(' · ') : '';
@@ -6736,6 +6796,7 @@ const MOVE_KEYS = {
 for (const card of document.querySelectorAll('.class-card')) {
   card.addEventListener('click', () => {
     Sfx.ensure(); Music.start();
+    G.nextHeat = heatSel(card.dataset.class);
     newGame(card.dataset.class);
   });
 }
@@ -7444,6 +7505,7 @@ let joySuppressClick = false;
 updateTorchLine();
 updateConductLine();
 updateRecordLine();
+updateHeatChips();
 fetchDailyBoard();
 // title boot: the daily line carries today's date from the first paint
 (() => { const dl = $('daily-line'); if (dl) dl.textContent = `[D] daily challenge \u2014 ${dailyKey()}: one seeded dungeon, same for everyone today`; })();
