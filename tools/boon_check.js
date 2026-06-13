@@ -73,7 +73,7 @@ return { G, RNG, BOONS, newGame, applyBoon, hasBoon, boonPool, tryMove, afterPla
   recomputeFOV, playerAtk, playerDef, playerDodge, dreadShift, spellBonus, warePrice,
   spawnProjectile, stepProjectiles, monstersAct, killMonster, hurtPlayer, cheb, DIRS8, T,
   computeDistField, ITEMS, addItem, skipCutsceneLine, dist2, earnGold,
-  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem, castMirrorStance, parryRiposte, recordHeatUnlock };
+  useItem, castBulwark, castVault, itemPoolForDepth, spellCost, aimHints, cryReaches, dropItem, score, FX, bestiarySeen, MONSTERS, recordRun, castExhume, castLastRites, petAct, monstersAct, RELICS, applyRelic, castProstrate, offerRelics, playerDodge, useItem, castMirrorStance, parryRiposte, recordHeatUnlock, FLOOR_THEMES, VAULTS, generateMap };
 `;
 const g = new Function(
   'window', 'document', 'localStorage', 'requestAnimationFrame', 'Image', 'navigator',
@@ -969,6 +969,37 @@ console.log('\n=== weapons with souls · rings · actives ===');
   { const src83 = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'game.js'), 'utf8');
     check('reads ride the save', src83.includes('reads: G.reads || {},') && src83.includes('G.reads = s.reads || {};'));
     check('the mirror rests two turns (anti-lock)', src83.includes('p.stanceCd = 2;')); }
+
+  // VAULTS & THEMES (iter86, menu #8): content must be well-formed and the
+  // floor must NEVER seal — soak the generator across depths and seeds
+  { const dsrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'web', 'js', 'dungeon.js'), 'utf8');
+    const themes = g.FLOOR_THEMES || null;
+    check('every theme carries its name and palette', themes && Object.entries(themes).every(([k, t]) => k === 'plain' || (t.name && t.wall && t.floor)),
+      themes ? Object.entries(themes).filter(([k, t]) => k !== 'plain' && !(t.name && t.wall && t.floor)).map(e => e[0]).join(',') : 'no FLOOR_THEMES export');
+    check('the new themes are in the roll', themes && !!themes.webway && !!themes.fungal && !!themes.kingsrest);
+    // vault rows must be rectangular and speak only the legend
+    const legendOk = /VAULT_SPAWN = \{ 'L': 'lobber', 'H': 'charger', 'P': 'spider', 'W': 'wraith' \}/.test(dsrc);
+    check('the spawn legend covers the new markers', legendOk);
+    const vaults = g.VAULTS || null;
+    check('every vault is rectangular', vaults && vaults.every(v => v.rows.every(r2 => r2.length === v.rows[0].length)),
+      vaults ? vaults.filter(v => !v.rows.every(r2 => r2.length === v.rows[0].length)).map(v => v.name).join(',') : 'no VAULTS export');
+    check('every vault glyph is legal', vaults && vaults.every(v => v.rows.join('').split('').every(ch => '#.^~CSG?LHPW'.includes(ch))),
+      vaults ? vaults.filter(v => !v.rows.join('').split('').every(ch => '#.^~CSG?LHPW'.includes(ch))).map(v => v.name).join(',') : '');
+    check('thirteen vaults stand', vaults && vaults.length === 13, vaults && String(vaults.length)); }
+  // soak: 60 generated floors, every one must keep its exits reachable
+  { let sealed = 0; const seenThemes = new Set(); const seenVaults = new Set();
+    for (let d2 = 2; d2 <= 5; d2++) {
+      for (let i = 0; i < 15; i++) {
+        const map = g.generateMap(d2); // signature is (depth) — the generator owns its dims
+        if (map.theme && map.theme.name) seenThemes.add(map.theme.name);
+        if (map.vault) seenVaults.add(map.vault);
+        // the generator's own promise: stairs exist below the final floor
+        if (!map.stairsPos) { sealed++; continue; }
+      }
+    }
+    check('sixty floors, none sealed', sealed === 0, `${sealed} sealed`);
+    check('the soak rolled new content', seenThemes.size >= 3 && seenVaults.size >= 2,
+      `themes ${[...seenThemes].join('|')} vaults ${[...seenVaults].join('|')}`); }
 
   // ASCENSION HEAT (iter85, menu #7): the dark burns hotter above your first win
   p = fresh('warrior');

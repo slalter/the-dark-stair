@@ -264,3 +264,9 @@ Heat N: monHp/monAtk +8%·N, dreadAt −10·N, score +10%·N. Sample batteries (
 - gravedigger heat 1: 0% (n=15, noise band)
 - heat 0 regression: warrior 7% (n=15) — multiplier paths neutral at heat 0 ✓
 Zero stalls in all four. Heats 4-5 deliberately uncalibrated: they are the wall.
+
+## 2026-06-13 — iter86: VAULTS & THEMES (menu #8, content)
++3 themes (Webway spider/trapMod3/loot2 · Fungal Deep slime/fov-1/pools · Kings' Rest gold2.2/count+2/trap+2, minD 4)
++3 vaults (nursery 3 spiders · drowned reliquary · wraith's toll, w/ new P/W spawn markers).
+6-class n=15 regression: warrior 13, rogue 20, others 0 (noise bands) — ZERO stalls (the
+connectivity gate held across a 60-floor harness soak ×3 too). No knob machinery touched.

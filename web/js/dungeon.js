@@ -237,9 +237,32 @@ const VAULTS_BESTIARY = [
     '#######',
   ] },
 ];
-VAULTS.push(...VAULTS_BAIT, ...VAULTS_BESTIARY);
+const VAULTS_DEPTHS = [
+  { name: 'the nursery', minD: 3, rows: [            // the eggs hatched; the gold stayed
+    '#######',
+    '#P...P#',
+    '#..C..#',
+    '#..P..#',
+    '???.???',
+  ] },
+  { name: 'the drowned reliquary', minD: 2, rows: [  // wade for the shrine, bleed for the chest
+    '########',
+    '#C~~~~S#',
+    '#.~..~.#',
+    '#...^..?',
+    '########',
+  ] },
+  { name: "the wraith's toll", minD: 4, rows: [      // two doors, one keeper, all the dead king's coin
+    '#######',
+    '#C.W.G#',
+    '#..#..#',
+    '?..#..?',
+    '#######',
+  ] },
+];
+VAULTS.push(...VAULTS_BAIT, ...VAULTS_BESTIARY, ...VAULTS_DEPTHS);
 const VAULT_TILE = { '#': T.WALL, '.': T.FLOOR, '^': T.TRAP, '~': T.WATER, 'C': T.CHEST, 'S': T.SHRINE, 'G': T.GILDED };
-const VAULT_SPAWN = { 'L': 'lobber', 'H': 'charger' };
+const VAULT_SPAWN = { 'L': 'lobber', 'H': 'charger', 'P': 'spider', 'W': 'wraith' };
 
 /* Stamp one vault into a fitting non-start/end room, then verify every special
    tile and the level exits remain reachable; revert the stamp otherwise. */

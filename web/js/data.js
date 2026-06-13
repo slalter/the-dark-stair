@@ -304,6 +304,15 @@ const FLOOR_THEMES = {
   bonehalls: { w: 1, minD: 3, name: 'HALLS OF BONE',
                msg: 'Bones carpet this place. They remember walking.',
                wall: '#44424c', floor: '#23222a', monoPool: 'skeleton', lootMod: 1 },
+  webway:    { w: 2, minD: 3, name: 'THE WEBWAY',
+               msg: 'Silk sheets every wall. The floors are strung to sing when touched — and the spinners are listening.',
+               wall: '#3d3a55', floor: '#201d2e', monoPool: 'spider', trapMod: 3, lootMod: 2 },
+  fungal:    { w: 2, minD: 2, name: 'THE FUNGAL DEEP',
+               msg: 'Spore-light dims your eyes. Things bloat and split in the warm dark.',
+               wall: '#2e4232', floor: '#16241a', monoPool: 'slime', fovMod: -1, pools: [3, 5], countMod: 1 },
+  kingsrest: { w: 1, minD: 4, name: "THE KINGS' REST",
+               msg: 'Gilded sarcophagi line the walls. The dead kings kept their gold — and their guards.',
+               wall: '#4a4030', floor: '#262016', goldMult: 2.2, lootMod: 2, countMod: 2, trapMod: 2 },
 };
 function pickTheme(d) {
   if (d === 1 || d === FINAL_DEPTH) return FLOOR_THEMES.plain;

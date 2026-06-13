@@ -1380,6 +1380,15 @@ const FLOOR_THEMES = {
   bonehalls: { w: 1, minD: 3, name: 'HALLS OF BONE',
                msg: 'Bones carpet this place. They remember walking.',
                wall: '#44424c', floor: '#23222a', monoPool: 'skeleton', lootMod: 1 },
+  webway:    { w: 2, minD: 3, name: 'THE WEBWAY',
+               msg: 'Silk sheets every wall. The floors are strung to sing when touched — and the spinners are listening.',
+               wall: '#3d3a55', floor: '#201d2e', monoPool: 'spider', trapMod: 3, lootMod: 2 },
+  fungal:    { w: 2, minD: 2, name: 'THE FUNGAL DEEP',
+               msg: 'Spore-light dims your eyes. Things bloat and split in the warm dark.',
+               wall: '#2e4232', floor: '#16241a', monoPool: 'slime', fovMod: -1, pools: [3, 5], countMod: 1 },
+  kingsrest: { w: 1, minD: 4, name: "THE KINGS' REST",
+               msg: 'Gilded sarcophagi line the walls. The dead kings kept their gold — and their guards.',
+               wall: '#4a4030', floor: '#262016', goldMult: 2.2, lootMod: 2, countMod: 2, trapMod: 2 },
 };
 function pickTheme(d) {
   if (d === 1 || d === FINAL_DEPTH) return FLOOR_THEMES.plain;
@@ -1629,9 +1638,32 @@ const VAULTS_BESTIARY = [
     '#######',
   ] },
 ];
-VAULTS.push(...VAULTS_BAIT, ...VAULTS_BESTIARY);
+const VAULTS_DEPTHS = [
+  { name: 'the nursery', minD: 3, rows: [            // the eggs hatched; the gold stayed
+    '#######',
+    '#P...P#',
+    '#..C..#',
+    '#..P..#',
+    '???.???',
+  ] },
+  { name: 'the drowned reliquary', minD: 2, rows: [  // wade for the shrine, bleed for the chest
+    '########',
+    '#C~~~~S#',
+    '#.~..~.#',
+    '#...^..?',
+    '########',
+  ] },
+  { name: "the wraith's toll", minD: 4, rows: [      // two doors, one keeper, all the dead king's coin
+    '#######',
+    '#C.W.G#',
+    '#..#..#',
+    '?..#..?',
+    '#######',
+  ] },
+];
+VAULTS.push(...VAULTS_BAIT, ...VAULTS_BESTIARY, ...VAULTS_DEPTHS);
 const VAULT_TILE = { '#': T.WALL, '.': T.FLOOR, '^': T.TRAP, '~': T.WATER, 'C': T.CHEST, 'S': T.SHRINE, 'G': T.GILDED };
-const VAULT_SPAWN = { 'L': 'lobber', 'H': 'charger' };
+const VAULT_SPAWN = { 'L': 'lobber', 'H': 'charger', 'P': 'spider', 'W': 'wraith' };
 
 /* Stamp one vault into a fitting non-start/end room, then verify every special
    tile and the level exits remain reachable; revert the stamp otherwise. */
